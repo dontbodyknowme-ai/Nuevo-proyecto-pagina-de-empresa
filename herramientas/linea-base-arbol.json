@@ -1,0 +1,201 @@
+{
+  "generado": "2026-10-01T23:17:11.324Z",
+  "nota": "Generado por herramientas/capturar-arbol.js. No editar a mano.",
+  "casos": 13,
+  "captura": [
+    {
+      "nombre": "vacio",
+      "motivo": "Sin materias: sale el <p> de \"no hay materias\". Es una rama aparte.",
+      "html": "<p class=\"arbol-vacio\">No hay materias aún.<br>Crea una para comenzar.</p>",
+      "nodosMateria": 0,
+      "nodosDoc": 0,
+      "botones": 0,
+      "texto": "No hay materias aún.Crea una para comenzar.",
+      "orden": [],
+      "errores": []
+    },
+    {
+      "nombre": "materia-sin-documentos",
+      "motivo": "Una materia con documentos: []. El <ul> de docs queda vacío.",
+      "html": "<ul><li><div class=\"nodo nodo-materia\" data-id=\"m1\"><span class=\"flecha abierta\">▶</span><span class=\"icono\">📁</span><span class=\"nombre\">Matemáticas</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Añadir documento\">📄</button><button class=\"btn-icono-small peligro\" title=\"Eliminar materia\">🗑️</button></div></div><ul></ul></li></ul>",
+      "nodosMateria": 1,
+      "nodosDoc": 0,
+      "botones": 2,
+      "texto": "▶📁Matemáticas📄🗑️",
+      "orden": [
+        "m1"
+      ],
+      "errores": []
+    },
+    {
+      "nombre": "varias-materias",
+      "motivo": "Varias materias y varios documentos: el orden de aparición importa.",
+      "html": "<ul><li><div class=\"nodo nodo-materia\" data-id=\"m1\"><span class=\"flecha abierta\">▶</span><span class=\"icono\">📁</span><span class=\"nombre\">Matemáticas</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Añadir documento\">📄</button><button class=\"btn-icono-small peligro\" title=\"Eliminar materia\">🗑️</button></div></div><ul><li><div class=\"nodo nodo-doc\" data-id=\"d1\" draggable=\"true\"><span class=\"icono\">📕</span><span class=\"nombre\">Ecuaciones.pdf</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li><li><div class=\"nodo nodo-doc\" data-id=\"d2\" draggable=\"true\"><span class=\"icono\">🌐</span><span class=\"nombre\">Notas.html</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li></ul></li><li><div class=\"nodo nodo-materia\" data-id=\"m2\"><span class=\"flecha abierta\">▶</span><span class=\"icono\">📁</span><span class=\"nombre\">Historia</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Añadir documento\">📄</button><button class=\"btn-icono-small peligro\" title=\"Eliminar materia\">🗑️</button></div></div><ul><li><div class=\"nodo nodo-doc\" data-id=\"d3\" draggable=\"true\"><span class=\"icono\">📘</span><span class=\"nombre\">Guerra.docx</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li></ul></li><li><div class=\"nodo nodo-materia\" data-id=\"m3\"><span class=\"flecha abierta\">▶</span><span class=\"icono\">📁</span><span class=\"nombre\">Física</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Añadir documento\">📄</button><button class=\"btn-icono-small peligro\" title=\"Eliminar materia\">🗑️</button></div></div><ul></ul></li></ul>",
+      "nodosMateria": 3,
+      "nodosDoc": 3,
+      "botones": 15,
+      "texto": "▶📁Matemáticas📄🗑️📕Ecuaciones.pdf👁️✏️🗑️🌐Notas.html👁️✏️🗑️▶📁Historia📄🗑️📘Guerra.docx👁️✏️🗑️▶📁Física📄🗑️",
+      "orden": [
+        "m1",
+        "d1",
+        "d2",
+        "m2",
+        "d3",
+        "m3"
+      ],
+      "errores": []
+    },
+    {
+      "nombre": "icono-por-defecto",
+      "motivo": "Materia sin campo \"icono\": tiene que salir la carpeta 📁.",
+      "html": "<ul><li><div class=\"nodo nodo-materia\" data-id=\"m1\"><span class=\"flecha abierta\">▶</span><span class=\"icono\">📁</span><span class=\"nombre\">Sin icono</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Añadir documento\">📄</button><button class=\"btn-icono-small peligro\" title=\"Eliminar materia\">🗑️</button></div></div><ul></ul></li></ul>",
+      "nodosMateria": 1,
+      "nodosDoc": 0,
+      "botones": 2,
+      "texto": "▶📁Sin icono📄🗑️",
+      "orden": [
+        "m1"
+      ],
+      "errores": []
+    },
+    {
+      "nombre": "icono-propio",
+      "motivo": "Materia con \"icono\": tiene que salir el suyo, no la carpeta.",
+      "html": "<ul><li><div class=\"nodo nodo-materia\" data-id=\"m1\"><span class=\"flecha abierta\">▶</span><span class=\"icono\">⚗️</span><span class=\"nombre\">Química</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Añadir documento\">📄</button><button class=\"btn-icono-small peligro\" title=\"Eliminar materia\">🗑️</button></div></div><ul></ul></li></ul>",
+      "nodosMateria": 1,
+      "nodosDoc": 0,
+      "botones": 2,
+      "texto": "▶⚗️Química📄🗑️",
+      "orden": [
+        "m1"
+      ],
+      "errores": []
+    },
+    {
+      "nombre": "tipos-de-documento",
+      "motivo": "Un documento de cada tipo: cada uno con su ícono. Uno sin tipo.",
+      "html": "<ul><li><div class=\"nodo nodo-materia\" data-id=\"m1\"><span class=\"flecha abierta\">▶</span><span class=\"icono\">📁</span><span class=\"nombre\">Varios</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Añadir documento\">📄</button><button class=\"btn-icono-small peligro\" title=\"Eliminar materia\">🗑️</button></div></div><ul><li><div class=\"nodo nodo-doc\" data-id=\"d1\" draggable=\"true\"><span class=\"icono\">🌐</span><span class=\"nombre\">a.html</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li><li><div class=\"nodo nodo-doc\" data-id=\"d2\" draggable=\"true\"><span class=\"icono\">📕</span><span class=\"nombre\">b.pdf</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li><li><div class=\"nodo nodo-doc\" data-id=\"d3\" draggable=\"true\"><span class=\"icono\">📘</span><span class=\"nombre\">c.word</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li><li><div class=\"nodo nodo-doc\" data-id=\"d4\" draggable=\"true\"><span class=\"icono\">📄</span><span class=\"nombre\">d.txt</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li><li><div class=\"nodo nodo-doc\" data-id=\"d5\" draggable=\"true\"><span class=\"icono\">📄</span><span class=\"nombre\">e.sin-tipo</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li></ul></li></ul>",
+      "nodosMateria": 1,
+      "nodosDoc": 5,
+      "botones": 17,
+      "texto": "▶📁Varios📄🗑️🌐a.html👁️✏️🗑️📕b.pdf👁️✏️🗑️📘c.word👁️✏️🗑️📄d.txt👁️✏️🗑️📄e.sin-tipo👁️✏️🗑️",
+      "orden": [
+        "m1",
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+        "d5"
+      ],
+      "errores": []
+    },
+    {
+      "nombre": "nombre-con-acentos",
+      "motivo": "Acentos y ñ: si alguien mete escapeHtml de más, se ven.",
+      "html": "<ul><li><div class=\"nodo nodo-materia\" data-id=\"m1\"><span class=\"flecha abierta\">▶</span><span class=\"icono\">📁</span><span class=\"nombre\">Programación Ñandú</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Añadir documento\">📄</button><button class=\"btn-icono-small peligro\" title=\"Eliminar materia\">🗑️</button></div></div><ul><li><div class=\"nodo nodo-doc\" data-id=\"d1\" draggable=\"true\"><span class=\"icono\">📕</span><span class=\"nombre\">Árboles binarios.pdf</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li></ul></li></ul>",
+      "nodosMateria": 1,
+      "nodosDoc": 1,
+      "botones": 5,
+      "texto": "▶📁Programación Ñandú📄🗑️📕Árboles binarios.pdf👁️✏️🗑️",
+      "orden": [
+        "m1",
+        "d1"
+      ],
+      "errores": []
+    },
+    {
+      "nombre": "nombre-con-html",
+      "motivo": "XSS: un nombre con comillas y etiquetas. Tiene que salir como texto.",
+      "html": "<ul><li><div class=\"nodo nodo-materia\" data-id=\"m1\"><span class=\"flecha abierta\">▶</span><span class=\"icono\">📁</span><span class=\"nombre\">informe\" onload=\"alert(1)</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Añadir documento\">📄</button><button class=\"btn-icono-small peligro\" title=\"Eliminar materia\">🗑️</button></div></div><ul><li><div class=\"nodo nodo-doc\" data-id=\"d1\" draggable=\"true\"><span class=\"icono\">🌐</span><span class=\"nombre\">&lt;img src=x onerror=alert(2)&gt;</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li></ul></li></ul>",
+      "nodosMateria": 1,
+      "nodosDoc": 1,
+      "botones": 5,
+      "texto": "▶📁informe\" onload=\"alert(1)📄🗑️🌐<img src=x onerror=alert(2)>👁️✏️🗑️",
+      "orden": [
+        "m1",
+        "d1"
+      ],
+      "errores": []
+    },
+    {
+      "nombre": "nombre-vacio",
+      "motivo": "Nombres vacíos: el nodo se dibuja igual, sin texto.",
+      "html": "<ul><li><div class=\"nodo nodo-materia\" data-id=\"m1\"><span class=\"flecha abierta\">▶</span><span class=\"icono\">📁</span><span class=\"nombre\"></span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Añadir documento\">📄</button><button class=\"btn-icono-small peligro\" title=\"Eliminar materia\">🗑️</button></div></div><ul><li><div class=\"nodo nodo-doc\" data-id=\"d1\" draggable=\"true\"><span class=\"icono\">🌐</span><span class=\"nombre\"></span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li></ul></li></ul>",
+      "nodosMateria": 1,
+      "nodosDoc": 1,
+      "botones": 5,
+      "texto": "▶📁📄🗑️🌐👁️✏️🗑️",
+      "orden": [
+        "m1",
+        "d1"
+      ],
+      "errores": []
+    },
+    {
+      "nombre": "muchos-documentos",
+      "motivo": "10 documentos: el orden tiene que respectarse entero.",
+      "html": "<ul><li><div class=\"nodo nodo-materia\" data-id=\"m1\"><span class=\"flecha abierta\">▶</span><span class=\"icono\">📁</span><span class=\"nombre\">Carga</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Añadir documento\">📄</button><button class=\"btn-icono-small peligro\" title=\"Eliminar materia\">🗑️</button></div></div><ul><li><div class=\"nodo nodo-doc\" data-id=\"d0\" draggable=\"true\"><span class=\"icono\">🌐</span><span class=\"nombre\">Doc 1</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li><li><div class=\"nodo nodo-doc\" data-id=\"d1\" draggable=\"true\"><span class=\"icono\">🌐</span><span class=\"nombre\">Doc 2</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li><li><div class=\"nodo nodo-doc\" data-id=\"d2\" draggable=\"true\"><span class=\"icono\">🌐</span><span class=\"nombre\">Doc 3</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li><li><div class=\"nodo nodo-doc\" data-id=\"d3\" draggable=\"true\"><span class=\"icono\">🌐</span><span class=\"nombre\">Doc 4</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li><li><div class=\"nodo nodo-doc\" data-id=\"d4\" draggable=\"true\"><span class=\"icono\">🌐</span><span class=\"nombre\">Doc 5</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li><li><div class=\"nodo nodo-doc\" data-id=\"d5\" draggable=\"true\"><span class=\"icono\">🌐</span><span class=\"nombre\">Doc 6</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li><li><div class=\"nodo nodo-doc\" data-id=\"d6\" draggable=\"true\"><span class=\"icono\">🌐</span><span class=\"nombre\">Doc 7</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li><li><div class=\"nodo nodo-doc\" data-id=\"d7\" draggable=\"true\"><span class=\"icono\">🌐</span><span class=\"nombre\">Doc 8</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li><li><div class=\"nodo nodo-doc\" data-id=\"d8\" draggable=\"true\"><span class=\"icono\">🌐</span><span class=\"nombre\">Doc 9</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li><li><div class=\"nodo nodo-doc\" data-id=\"d9\" draggable=\"true\"><span class=\"icono\">🌐</span><span class=\"nombre\">Doc 10</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li></ul></li></ul>",
+      "nodosMateria": 1,
+      "nodosDoc": 10,
+      "botones": 32,
+      "texto": "▶📁Carga📄🗑️🌐Doc 1👁️✏️🗑️🌐Doc 2👁️✏️🗑️🌐Doc 3👁️✏️🗑️🌐Doc 4👁️✏️🗑️🌐Doc 5👁️✏️🗑️🌐Doc 6👁️✏️🗑️🌐Doc 7👁️✏️🗑️🌐Doc 8👁️✏️🗑️🌐Doc 9👁️✏️🗑️🌐Doc 10👁️✏️🗑️",
+      "orden": [
+        "m1",
+        "d0",
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+        "d5",
+        "d6",
+        "d7",
+        "d8",
+        "d9"
+      ],
+      "errores": []
+    },
+    {
+      "nombre": "materia-sin-lista-de-documentos",
+      "html": "<ul><li><div class=\"nodo nodo-materia\" data-id=\"m1\"><span class=\"flecha abierta\">▶</span><span class=\"icono\">📁</span><span class=\"nombre\">Rota</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Añadir documento\">📄</button><button class=\"btn-icono-small peligro\" title=\"Eliminar materia\">🗑️</button></div></div><ul></ul></li></ul>",
+      "nodosMateria": 1,
+      "nodosDoc": 0,
+      "botones": 2,
+      "texto": "▶📁Rota📄🗑️",
+      "orden": [
+        "m1"
+      ],
+      "errores": []
+    },
+    {
+      "nombre": "documento-sin-contenido",
+      "motivo": "Un PDF y un Word sin contenido. El menú los tiene que mostrar igual.",
+      "html": "<ul><li><div class=\"nodo nodo-materia\" data-id=\"m1\"><span class=\"flecha abierta\">▶</span><span class=\"icono\">📁</span><span class=\"nombre\">Incompleta</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Añadir documento\">📄</button><button class=\"btn-icono-small peligro\" title=\"Eliminar materia\">🗑️</button></div></div><ul><li><div class=\"nodo nodo-doc\" data-id=\"d1\" draggable=\"true\"><span class=\"icono\">📕</span><span class=\"nombre\">bien.pdf</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li><li><div class=\"nodo nodo-doc\" data-id=\"d2\" draggable=\"true\"><span class=\"icono\">📕</span><span class=\"nombre\">roto.pdf</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li><li><div class=\"nodo nodo-doc\" data-id=\"d3\" draggable=\"true\"><span class=\"icono\">📘</span><span class=\"nombre\">roto.docx</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li></ul></li></ul>",
+      "nodosMateria": 1,
+      "nodosDoc": 3,
+      "botones": 11,
+      "texto": "▶📁Incompleta📄🗑️📕bien.pdf👁️✏️🗑️📕roto.pdf👁️✏️🗑️📘roto.docx👁️✏️🗑️",
+      "orden": [
+        "m1",
+        "d1",
+        "d2",
+        "d3"
+      ],
+      "errores": []
+    },
+    {
+      "nombre": "respaldo-con-basura",
+      "motivo": "Entradas que no son materias ni documentos, entre datos buenos.",
+      "html": "<ul><li><div class=\"nodo nodo-materia\" data-id=\"m1\"><span class=\"flecha abierta\">▶</span><span class=\"icono\">📁</span><span class=\"nombre\">Buena</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Añadir documento\">📄</button><button class=\"btn-icono-small peligro\" title=\"Eliminar materia\">🗑️</button></div></div><ul><li><div class=\"nodo nodo-doc\" data-id=\"d1\" draggable=\"true\"><span class=\"icono\">🌐</span><span class=\"nombre\">x.html</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Ver documento\">👁️</button><button class=\"btn-icono-small\" title=\"Renombrar documento\">✏️</button><button class=\"btn-icono-small peligro\" title=\"Eliminar documento\">🗑️</button></div></div></li></ul></li><li><div class=\"nodo nodo-materia\" data-id=\"m2\"><span class=\"flecha abierta\">▶</span><span class=\"icono\">📁</span><span class=\"nombre\">Con basura</span><div class=\"acciones-nodo\"><button class=\"btn-icono-small\" title=\"Añadir documento\">📄</button><button class=\"btn-icono-small peligro\" title=\"Eliminar materia\">🗑️</button></div></div><ul></ul></li></ul>",
+      "nodosMateria": 2,
+      "nodosDoc": 1,
+      "botones": 7,
+      "texto": "▶📁Buena📄🗑️🌐x.html👁️✏️🗑️▶📁Con basura📄🗑️",
+      "orden": [
+        "m1",
+        "d1",
+        "m2"
+      ],
+      "errores": []
+    }
+  ]
+}

@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cuaderno Virtual</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- Aviso de datos con problemas (T6). Arranca oculto: `js/interfaz/aviso.js`
+         lo muestra solo si al revisar los datos encontró algo. Nunca borra nada. -->
+    <div class="aviso-datos" id="avisoDatos" hidden>
+        <!-- El contenido lo pinta js/interfaz/aviso.js -->
+    </div>
+    <div class="cuaderno">
+        <!-- Menú lateral -->
+        <aside class="menu-lateral" id="menuLateral">
+            <div class="menu-header">
+                <div class="logo">
+                    <span class="logo-icono">📖</span>
+                    <span class="logo-texto">Cuaderno Virtual</span>
+                </div>
+            </div>
+            <nav class="arbol" id="arbolNavegacion">
+                <!-- El árbol se genera dinámicamente con JS -->
+            </nav>
+            <div class="menu-footer">
+                <button class="btn-calendario" id="btnCalendario">📅 Calendario</button>
+                <div class="drop-zone" id="dropZone">
+                    <div class="drop-zone-texto">Arrastra archivos aquí</div>
+                </div>
+                <button class="btn-add-materia" id="btnAddMateria">
+                    <span>+</span> Añadir Materia
+                </button>
+            </div>
+        </aside>
+
+        <!-- Respaldo del menú en el teléfono (T3).
+             Aparece solo cuando el cajón está abierto y solo por debajo de
+             640 px, por regla de la hoja de estilos. Es una zona de toque, no
+             un control: por eso aria-hidden. Va después del <aside> para que
+             la regla `.menu-lateral.visible ~ .menu-respaldo` lo alcance. -->
+        <div class="menu-respaldo" id="menuRespaldo" aria-hidden="true"></div>
+
+        <!-- Botón flotante para toggle del menú.
+
+             El mismo clic hace dos cosas distintas según el ancho: en uno
+             ancho pliega el panel a 60 px, en uno angosto (≤640 px) abre el
+             cajón. Por eso el title no dice "colapsar" ni "abrir": no hay
+             forma de saber el ancho desde acá, y un texto que prometiera una
+             sola de las dos cosas estaría mintiendo en la otra. Lo que la
+             flecha indique lo decide el CSS, que sí sabe el ancho. -->
+        <button class="btn-toggle-flotante" id="btnToggle"
+                title="Mostrar u ocultar el menú"
+                aria-label="Mostrar u ocultar el menú">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M10 12L6 8L10 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </button>
+
+        <!-- Botón modo lectura -->
+        <button class="btn-lectura" id="btnLectura" title="Modo lectura">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+            </svg>
+        </button>
+
+        <!-- Área de contenido -->
+        <main class="contenido" id="contenido">
+            <div class="topbar">
+                <div class="breadcrumbs" id="breadcrumbs">
+                    <!-- Breadcrumbs dinámicos -->
+                </div>
+                <div class="topbar-actions">
+                    <div class="menu-config">
+                        <button class="btn-config" id="btnConfig">⚙️</button>
+                        <div class="menu-desplegable" id="menuDesplegable">
+                            <button class="menu-item" id="btnExportar">
+                                <span>📤</span> Exportar datos
+                            </button>
+                            <button class="menu-item" id="btnImportar">
+                                <span>📥</span> Importar datos
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="visor" id="visor">
+                <div class="bienvenida">
+                    <div class="bienvenida-icono">📚</div>
+                    <h2>Tu Cuaderno Virtual</h2>
+                    <p>Crea materias y sube tus documentos HTML, PDF o Word para organizarlos.</p>
+                    <div class="stats" id="statsContainer"></div>
+                    <p class="hint">Haz clic en "Añadir Materia" para comenzar.</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal para añadir materia -->
+    <div class="modal-overlay" id="modalMateria">
+        <div class="modal">
+            <h3>Nueva Materia</h3>
+            <input type="text" id="inputMateriaNombre" placeholder="Nombre de la materia (ej: Anatomía)" maxlength="50">
+            <div class="modal-actions">
+                <button class="btn-ghost" id="btnCancelarMateria">Cancelar</button>
+                <button class="btn-primary" id="btnCrearMateria">Crear</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Input de archivos oculto -->
+    <input type="file" id="inputArchivo" accept=".html,.htm,.pdf,.docx,.doc" multiple style="display:none">
+    <input type="file" id="inputImportar" accept=".json" style="display:none">
+
+    <!-- Modal Calendario -->
+    <div class="modal-calendario" id="modalCalendario">
+        <!-- El contenedor agrupa todo el modal en un panel con fondo, borde y
+             esquinas redondeadas. Sin este div el modal se acomoda en fila:
+             la navegación a la izquierda, el contenido al centro y la leyenda
+             a la derecha, y en pantallas chicas casi todo queda fuera de la
+             ventana.
+             Ver .calendario-container en css/styles.css y RF-1 de
+             specs/002-layout-calendario/spec.md. -->
+        <div class="calendario-container">
+            <div class="calendario-header">
+                <div class="calendario-nav">
+                    <input type="number" id="inputMes" min="1" max="12" value="9" placeholder="Mes">
+                    <input type="number" id="inputAnio" min="2020" max="2100" value="2026" placeholder="Año">
+                    <button id="btnIrMes">Ir</button>
+                </div>
+                <button class="btn-alternar-vista activo" id="btnAlternarVista">📅 Calendario</button>
+                <!-- El botón de cerrar vive acá y no dentro del panel de
+                     anotaciones: en la vista mapa ese panel se oculta entero,
+                     y el botón quedaba invisible e inclicable.
+                     Ver RF-5 de specs/002-layout-calendario/spec.md. -->
+                <button class="btn-cerrar-calendario" id="btnCerrarCalendario">✕</button>
+            </div>
+            <div class="calendario-body">
+                <div class="calendario-grid" id="calendarioGrid">
+                    <!-- Generado dinámicamente -->
+                </div>
+                <div class="calendario-panel">
+                    <div class="panel-header">
+                        <h3 class="panel-titulo">Anotaciones</h3>
+                    </div>
+                    <p class="panel-fecha" id="panelFecha">Selecciona un día</p>
+                    <div class="anotaciones-existentes" id="anotacionesExistentes">
+                        <p class="anotaciones-vacio">Haz clic en un día para ver sus anotaciones</p>
+                    </div>
+                    <div class="formulario-anotacion">
+                        <select id="tipoAnotacion">
+                            <option value="parcial">📝 Parcial</option>
+                            <option value="entrega">📤 Entrega</option>
+                            <option value="nota">📌 Nota personal</option>
+                        </select>
+                        <input type="text" id="descripcionAnotacion" placeholder="Descripción">
+                        <button class="btn-guardar-anotacion" id="btnGuardarAnotacion" disabled>Guardar</button>
+                    </div>
+                </div>
+                <div class="calendario-mapa" id="calendarioMapa">
+                    <div class="mapa-calor" id="mapaCalor"></div>
+                    <div class="mapa-detalle" id="mapaDetalle"></div>
+                </div>
+            </div>
+            <div class="calendario-leyenda">
+                <span><span class="dot dot-estudio"></span> Estudio</span>
+                <span><span class="dot dot-parcial"></span> Parcial</span>
+                <span><span class="dot dot-entrega"></span> Entrega</span>
+                <span><span class="dot dot-nota"></span> Nota</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Widget Pomodoro -->
+    <div class="pomodoro-widget" id="pomodoroWidget">
+        <div class="pomodoro-display">
+            <span class="pomodoro-icono">🍅</span>
+            <span class="pomodoro-tiempo" id="pomodoroTiempo">25:00</span>
+        </div>
+        <div class="pomodoro-controles" id="pomodoroControles">
+            <button class="pomodoro-btn" id="btnIniciar">▶</button>
+            <button class="pomodoro-btn" id="btnPausar" disabled>⏸</button>
+            <button class="pomodoro-btn" id="btnReiniciar">↺</button>
+        </div>
+    </div>
+
+    <!-- Script de lógica: se carga antes que app.js -->
+    <!-- Lógica del mapa de calor: scripts clásicos con ámbito aislado.
+         No se usa type="module" porque el proyecto se abre con file://
+         y los módulos ES están bloqueados por CORS en ese caso. -->
+    <script src="js/logica/mapa-calor.js"></script>
+    <script src="js/logica/almacenamiento.js"></script>
+    <script src="js/logica/consentimiento.js"></script>
+    <script src="js/datos/secciones.js"></script>
+    <!-- layout.js va antes de interfaz/visibilidad.js: la lógica decide,
+         la interfaz aplica. -->
+    <script src="js/logica/layout.js"></script>
+    <!-- fechas.js va antes de app.js: app.js usa su cálculo de días -->
+    <script src="js/logica/fechas.js"></script>
+    <!-- anotaciones.js va antes de app.js: la regla del máximo vive ahí -->
+    <script src="js/logica/anotaciones.js"></script>
+    <script src="js/logica/calendario.js"></script>
+    <!-- estadisticas.js va antes de app.js: app.js pide los números -->
+    <script src="js/logica/estadisticas.js"></script>
+    <!-- arbol.js va antes de app.js: app.js pide el modelo del menú lateral -->
+    <script src="js/logica/arbol.js"></script>
+    <!-- datos.js va antes de app.js: app.js normaliza lo que lee al arrancar -->
+    <script src="js/logica/datos.js"></script>
+    <!-- aviso.js dibuja el cartel. Sin cálculos: solo pinta lo que le pasaron -->
+    <script src="js/interfaz/aviso.js"></script>
+    <script src="js/interfaz/mapa-calor.js"></script>
+    <script src="js/interfaz/visibilidad.js"></script>
+    <script src="js/interfaz/visor.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/inicio-calendario.js"></script>
+</body>
+</html>
