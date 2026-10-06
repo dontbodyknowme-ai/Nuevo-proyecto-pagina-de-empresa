@@ -9,7 +9,9 @@
 
 App vanilla (HTML/CSS/JS, sin build) para organizar apuntes por materias y ver HTML/PDF/Word
 en un visor, con calendario de anotaciones, mapa de calor de estudio y Pomodoro.
-Todo vive en `localStorage`, sin red y sin cuentas.
+Todo vive en el navegador, sin red y sin cuentas. Desde la spec 008 los datos van al almacén
+del navegador (`IndexedDB`), que separa cada dato; `localStorage` queda solo para leer lo viejo
+y migrarlo, y **nunca se borra**.
 
 ## Estado del repo
 
@@ -18,8 +20,10 @@ Todo vive en `localStorage`, sin red y sin cuentas.
   abajo son la única puerta de calidad.
 - **Cero dependencias:** no hay `package.json` ni `node_modules`, y no se agregan (Principio 1).
   Node se usa solo como runner (`node --test`) y para las sondas de `herramientas/`.
-- **Suite:** 420 tests al momento de escribir esto. Los números escritos a mano en los
-  documentos se desincronizan solos: `docs/constitucion.md` todavía dice "91 tests".
+- **Suite:** 493 tests al momento de escribir esto. Los números escritos a mano en los
+  documentos se desincronizan solos: **`docs/constitucion.md` y estas líneas se corrigen a
+  mano**, y hay que hacerlo cuando cambia el conteo. No hay ningún test que lo vigile,
+  porque una cifra escrita a mano no es una regla: es un dato.
 - **Archivos que NO son de la app.** No los borres, no los "ordenes", no los muevas:
   - `New Project/` → apuntes del curso de OpenCode.
   - `.npmrc` (`allow-scripts=opencode-ai`), `skills-lock.json`, `.agents/` → instalación de skills.
@@ -31,10 +35,14 @@ Todo vive en `localStorage`, sin red y sin cuentas.
 index.html              Único HTML. <script> clásicos, NUNCA type="module".
 css/styles.css          Tema oscuro + responsivo (640 px = teléfono)
 js/
-  app.js                1934 líneas: lógica y DOM mezclados. Publica window.CuadernoVirtual.
+  app.js                2533 líneas: dibujo y conexión de eventos, más lo que quedó.
+                         Publica window.CuadernoVirtual.
   inicio-calendario.js  Conecta el mapa de calor con el modal (RF-7)
   logica/               PURO: sin DOM, sin reloj del sistema, sin almacenamiento
   datos/secciones.js    Estado de las secciones de estudio
+  datos/almacenamiento.js  Habla con el almacén del navegador: abre, migra, lee y escribe.
+                         NO es lo mismo que logica/almacenamiento.js, y ese ya **no
+                         existe** (spec 008, T10).
   interfaz/             Solo dibuja, no calcula
 herramientas/           Sondas que abren Chrome. Va acá y NO en test/ (ver trampas)
 test/                   *.test.js + dom-falso.js (arnés compartido) + datos-un-anio.json
@@ -172,18 +180,71 @@ manejador que se ejecutaba al cargar.
 
 - **Mapa de calor en blanco con los tests verdes** — ver punto 2.
 - **`[hidden]` no ocultaba nada** con `display: flex`.
+- **Los PDF y los Word no se podían abrir** (2026-10-05, reportado por el usuario): `verDocumento()`
+  cortaba con `documentoSinContenido(doc)` **antes** de ir a buscar el archivo al almacén. Como el
+  índice ya no trae el contenido, la respuesta era siempre "le falta", y la lectura no llegaba a
+  ejecutarse. Ahora se pregunta al almacén y se decide con la respuesta. Ojo con esto en general:
+  **una función que respondía bien deja de responder bien el día que cambia el dato que mira.**
+  En `test/abrir-documento.test.js`. Y ojo también con el arnés: el panel se arma con
+  `appendChild`, así que un test que lea `innerHTML` ve `''` y pasa sin mirar nada.
+- **A PDF y Word se les pasaba el texto, no los bytes** (2026-10-05): lo guardado es
+  `data:…;base64,…` porque eso devuelve `readAsDataURL`, y pdf.js quiere **bytes**. Tomaba los
+  caracteres de esa cadena como si fueran el archivo y no abría. El Word pasaba por `fetch()`,
+  que sí descodifica —por eso funcionaba **por accidente**—, y esa era una **petición de red**
+  para abrir un archivo que ya está en tu computadora. Ahora los dos usan `bytesDeDocumento()`.
+  Y ojo: un `try` alrededor de la llamada **no** ve los errores de la librería, porque pasan
+  adentro. En `test/abrir-pdf-word.test.js`.
+- **`atob` en el arnés, no en la app** — es un global del navegador. La primera versión del
+  `atob` falso estaba mal: tiraba los caracteres raros en vez de fallar, así que un test del
+  camino del error pasaba por la razón equivocada. **Un simulador más permisivo que la
+  realidad no puede probar qué pasa cuando algo falla.**
+- **Un fixture tiene que tener la forma del dato real.** `'BASE64-DEL-PDF'` no es base64: pasó
+  muchos tests porque nada lo descodificaba todavía, y saltó cuando apareció la conversión.
+- **El selector ofrecía `.doc`, que no se puede abrir** (2026-10-05): `mammoth` solo entiende
+  `.docx`. El `.doc` de Word 97-2003 se subía, se guardaba, aparecía en el menú con su nombre,
+  y al abrirlo decía "error al convertir". **Aceptar un formato que después no se puede abrir es
+  peor que no ofrecerlo.** Ahora `crearDocumento()` devuelve `null` y hay un aviso que dice
+  qué formatos sí y **cómo** guardarlo bien. Ojo: **`accept` es una sugerencia del navegador**,
+  no una regla —se puede elegir cualquier archivo igual—, así que la regla está en `crearDocumento()`.
+  En `test/formatos-aceptados.test.js`.
+- **`FileReader` en el arnés era un stub** (`function () {}`): eso dejaba **todo el camino de
+  subida** sin poder probarse con `node --test`, porque `crearDocumento()` reventaba con
+  "readAsDataURL is not a function". Ahora lee de verdad. Los archivos de prueba llevan los
+  bytes en `_bytes`, con guion bajo para que nadie lo confunda con algo real.
 - **Menú del teléfono:** cerrado lleva `visibility: hidden` (si no, el tabulador entra a "Añadir
   Materia" con `translateX(-100%)`), y la `visibility` va **con retardo al cerrar y sin retardo
   al abrir**: con duración, durante la animación el elemento no puede recibir el foco.
 - **Bucle de días que llegaba siempre a 31**, incluso en febrero.
 - **El aviso decía "casi lleno (0 % de 95 %)"**: hoy son dos mensajes distintos según se sepa o
-  no el porcentaje.
+  no el porcentaje. **Los dos textos se borraron** en la spec 008 (T10): ese muro de 5 MB ya no
+  existe, y anunciar un muro que no está es peor que no avisar. Ahora hay **un** texto, que dice
+  que no se pudo guardar sin inventar la causa.
 - **Contar palabras por espacios cuenta de más** con espacio al principio o al final
   (`' hola '` da 3, debería dar 1). Declarado **CP-2** en la spec 003 y fijado así en los tests,
   con una nota de qué debería dar. **No lo "arregles" de paso.**
-- **`docs/constitucion.md` tiene palabras en inglés que sobraron** ("Eso *freedom* es lo que
-  define…", "Son dos *Battlefield* distintos"). `buscar-caracteres-raros.js` **no las puede ver**:
-  solo busca alfabetos no latinos, y esas son letras latinas válidas.
+- **`docs/constitucion.md` tenía palabras en inglés que sobraban** ("Eso *freedom*…", "Son dos
+  *Battlefield* distintos"). `buscar-caracteres-raros.js` **no las puede ver**: solo busca
+  alfabetos no latinos, y esas son letras latinas válidas. **Corregidas el 2026-10-05.** La
+  lección sigue viva: un archivo puede tener la regla escrita y no cumplirla, y ninguna
+  herramienta que busque alfabetos raros lo va a avisar.
+
+### 6 · Una función que no lanza esconde el error tres pasos más abajo
+
+Una función que devuelve `[]`, `null` o un valor por defecto en vez de tirar **es lo correcto**
+cuando el dato es del usuario: mejor un cuaderno con un dato raro que una página muerta. Es el
+principio 5.
+
+Pero tiene un precio, y hay que conocerlo: **el error se corre un paso más adentro, y a tres
+pasos deja de parecerse a lo que es.**
+
+Pasó dos veces en la spec 008. `separarIndice()` devolvía `[]` con un objeto donde se esperaba
+una lista, y el síntoma apareció tres pasos después, en la lectura del almacén. Se buscó el
+defecto en el módulo, en el orden de las escrituras y en las promesas: **el dato de prueba
+estaba mal**, y la función hacía exactamente lo que debía.
+
+Cuando una función pura devuelva algo vacío y no debería, **probá la entrada antes de suspectar
+de la función**. Y si el vacío es a propósito, que lo diga con un test propio, para que el
+próximo que lo lea no lo interprete como "todavía no lo implementaron".
 
 ## Mover no es corregir
 
@@ -248,6 +309,7 @@ Corré todo esto después de cada cambio. Los tres primeros son los que atrapan 
 | 4 | `node --test` | `fail 0` |
 | 5 | `node herramientas/verificar-layout.js` | "Todo entra…", salida 0 |
 | 6 | `Get-ChildItem js -Recurse -Filter *.js \| % { node --check $_.FullName }` | sin salida (17 archivos) |
+| 7 | `node herramientas/comparar-arbol.js` | "IDÉNTICO", salida 0 |
 
 Además, en Chrome (`chrome-devtools`): consola con **0 errores**, todas las requests en `200`,
 captura legible y viewport de 375 px sin scroll horizontal. En la página, la consola **no** debe
@@ -278,8 +340,15 @@ Correrlo siempre que agregues, renombres o muevas una función entre archivos.
   modal**). Los dos extremos son a propósito: con el modal abierto el Pomodoro está oculto por
   regla, así que un verificador que solo midiera eso **nunca** detectaría un elemento que lo tape;
   y el aviso de datos está oculto con datos limpios.
-- **Nunca sembrar datos sobre el `localStorage` del usuario.** Las sondas abren Chrome con
+- **Nunca sembrar datos sobre el perfil del usuario.** Las sondas abren Chrome con
   `--user-data-dir` temporal. Si hay que probar en el navegador del usuario, preguntar antes.
+- **Las sondas siembran con `herramientas/sembrar.js`, y no con `localStorage.setItem`.** Con la
+  app leyendo del almacén del navegador, sembrar por `localStorage` **no siembra nada**: el
+  primer escenario migraba, dejaba la marca, y todos los siguientes medían una aplicación
+  vacía. El helper usa `window.CuadernoVirtual.importarRespaldo()`, que es el camino de
+  escritura de la app y además **marca la migración** — sin la marca, la recarga lee el
+  almacén viejo y no ve lo recién escrito—. **La línea base del árbol no se regenera nunca:**
+  si se regenera después de cambiar algo, congela como verdad lo que estaba mal.
 
 ### Si `chrome-devtools` no está en el catálogo
 
@@ -347,11 +416,14 @@ siga frenando la propagación, que arrastrar y soltar reordene.
 
 | Deuda | Detalle |
 |-------|---------|
-| `app.js` monolítico | **1934 líneas**, ~62 declaraciones de función. La spec 006 le *sacó* cuatro reglas y le *sumó* comentarios: subir de 1782 a 1934 **no** fue una mejora ni un error, era el objetivo |
-| Tope de `localStorage` | ~5 MB; los PDFs en base64 lo agrandan un 33 % |
+ | `app.js` grande | **2533 líneas**. Subió porque la spec 008 le sacó el almacenamiento entero a `js/datos/almacenamiento.js` y le *sumó* comentarios, flujos y el latido. **Grande no es roto**: no tiene un defecto, y achicarlo más está descartado (abajo) |
+| Tope de `localStorage` | **Ya no aplica.** El muro de 5 MB era del cuaderno entero en una clave; el almacén nuevo separa cada dato. Los PDFs **siguen** en base64, un 33 % más grandes, y eso sí conviene tenerlo presente para los documentos muy grandes |
 | **RF-12 sin implementar** | `js/logica/consentimiento.js` está entero y probado, pero **ninguna función tiene un llamador**. Decidido el 2026-10-02: **no se conecta**. Sin identidades ni servidor no hay cuaderno "ajeno", y un control de privacidad que no controla nada es peor que no tenerlo. Se conserva como andamiaje |
 | `existeFecha` sin usar | La exporta `js/logica/fechas.js` y 18 tests la prueban, pero el código no la llama. Se conservó a propósito |
-| Cifras desincronizadas | `docs/constitucion.md` dice "91 tests" (hay 420) y menciona `app.js` "pendiente de refactorizar" |
+| **Los 30 segundos del latido** | El latido escribe la sección de estudio en curso cada 30 segundos, así que cerrar la pestaña pierde como máximo eso. Es el precio de acotar lo que antes era *la sesión entera*. Decidido por el usuario el 2026-10-05 |
+| **Calendario ilegible sin salida** | Si las anotaciones guardadas no se pueden interpretar, el usuario ve el calendario vacío y **no tiene forma de recuperar el valor viejo desde la app**. Se puede a mano desde el almacenamiento del navegador, y el cartel avisa, pero no hay botón. Es decisión de producto |
+| **Dos pestañas abiertas** | Gana la última escritura. Declarado fuera de alcance por la spec 008 |
+| **Sin internet no abren los PDF ni los Word** | `mammoth` y `pdf.js` vienen de un CDN, y el PDF además baja un *worker* desde ahí. **Decidido el 2026-10-05: se deja así.** Se evaluó bajarlas al proyecto y no se hizo: ~1 MB de código minificado de terceros en un proyecto que se está aprendiendo, y **no resolvería el worker**, que sigue siendo una petición a la red. La decisión real era "¿querés que funcione sin internet?", y fue que no. Lo demás —materias, calendario, Pomodoro, mapa de calor, guardar, exportar, importar— y leer los **HTML** sí funcionan sin red |
 | Sección duplicada | `MEMORY.md` tiene el encabezado "Un comentario que cita el código borrado…" **dos veces** |
 
 > **Decidido el 2026-10-02: no hay spec 007.** Se evaluó achicar más `app.js` y se descartó. Lo

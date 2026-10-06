@@ -160,6 +160,7 @@ test('no rompe si el visor es null', () => {
 
 const ARCHIVOS_DE_LA_APP = [
     'js/app.js',
+    'js/datos/almacenamiento.js',   // spec 008, todavía no existe
     'js/interfaz/pdf.js',            // spec 006, todavía no existe
     'js/interfaz/documento.js'       // spec 006, todavía no existe
 ];
@@ -216,6 +217,57 @@ test('la red de arriba mira los archivos que dice mirar', () => {
     for (const relativo of entradas) {
         assert.ok(/^js\//.test(relativo),
             relativo + ' no es un archivo de la aplicación');
+    }
+});
+
+test('la red vigila el módulo del almacén nuevo antes de que exista', () => {
+    // El módulo `js/datos/almacenamiento.js` va a ser el primer lugar por donde
+    // pasan los datos del usuario que no sean su nombre: el contenido de cada
+    // documento. Por eso la red tiene que mirarlo **desde hoy**, no desde el día
+    // que se cree.
+    //
+    // La lista puede declarar archivos que todavía no existen. Lo que **no** puede
+    // es que se los agregue uno sin que la red lo note: por eso este test falla
+    // mientras el módulo no esté en la lista.
+    const codigo = fs.readFileSync(path.join(__dirname, 'visor.test.js'), 'utf8');
+    const bloque = codigo.match(/const ARCHIVOS_DE_LA_APP = \[([\s\S]*?)\]/);
+
+    assert.ok(bloque, 'no se encontró la lista de archivos');
+
+    const entradas = [...bloque[1].matchAll(/'([^']+)'/g)].map(m => m[1]);
+
+    assert.ok(entradas.includes('js/datos/almacenamiento.js'),
+        'js/datos/almacenamiento.js no está en la lista de archivos que la red '
+        + 'vigila. El día que se cree, la red va a seguir sin mirarlo y no va a '
+        + 'avisar: es el modo de fallo que ya pasó con app.js.');
+});
+
+test('una entrada que no existe tiene que decir que no existe', () => {
+    // Declarar archivos futuros es lo que permite abrir la red antes de mover el
+    // código. Pero tiene una trampa: **una entrada con el nombre mal escrito no
+    // lanza ningún error, simplemente se salta**, y la red queda vigilando un
+    // archivo que no existe. Da verde todos los días y no mira nada.
+    //
+    // Por eso una entrada que no está en el disco tiene que estar marcada en su
+    // propia línea. La marca no es un comentario de adorno: es lo que distingue
+    // "todavía no lo escribimos" de "el nombre está mal".
+    const codigo = fs.readFileSync(path.join(__dirname, 'visor.test.js'), 'utf8');
+    const bloque = codigo.match(/const ARCHIVOS_DE_LA_APP = \[([\s\S]*?)\]/);
+
+    assert.ok(bloque, 'no se encontró la lista de archivos');
+
+    for (const linea of bloque[1].split('\n')) {
+        const encontrado = linea.match(/'([^']+)'/);
+        if (!encontrado) continue;
+
+        const relativo = encontrado[1];
+        const existe = fs.existsSync(path.join(__dirname, '..', relativo));
+        if (existe) continue;
+
+        assert.ok(/todavía no existe/.test(linea),
+            relativo + ' no está en el disco y su línea no dice por qué. O el '
+            + 'nombre está mal escrito —y entonces la red salta esta línea sin '
+            + 'avisar—, o le falta la marca.');
     }
 });
 

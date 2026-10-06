@@ -1,6 +1,6 @@
 # Spec 008 — Almacenamiento real, en un solo almacén
 
-Estado: borrador
+Estado: aprobada (2026-10-05)
 
 > **Origen.** De la especificación 007, que está **abortada**. El motivo está escrito en
 > su [`cierre.md`](../007-almacenamiento-real/cierre.md) y hay que leerlo antes que este
@@ -46,15 +46,23 @@ como se usa la aplicación.
 a leer con el mismo contenido y borra la base de prueba, sin red y sin pedirle nada a
 ningún sitio:
 
+> **Corrección del 2026-10-05.** Esta tabla decía que el origen es `null`. Al repetir la
+> medición con `herramientas/medir-disponibilidad.js`, **lo medido es `file://`**. No
+> cambia nada —el almacén abre y funciona igual en los dos casos— pero es una afirmación
+> escrita que una medición contradice, y corregir el texto es lo que hay que hacer.
+>
+> La medición también cambió el "cuánto tardó", que decía "sin medir": **87 ms en frío**,
+> y el tiempo de la prueba pasó a ser un dato, no una intuición.
+
 | Qué se midió | Resultado |
 |---|---|
-| Protocolo y origen | `file:`, origen `null` — el de un archivo local |
+| Protocolo y origen | `file:`, origen `file://` — el de un archivo local |
 | Abrir el almacén | Abre |
 | Escribir un registro | Escribe |
 | Volver a leer ese registro | Se lee **con el mismo contenido** |
 | Borrar la base de prueba | Borra |
 | Navegador | **Chrome 154** (Chromium 154), Windows |
-| Cuánto tardó | Sin medir; **no es un requisito con tope** |
+| Cuánto tardó | **Medido el 2026-10-05**: 87 ms en frío y 8, 6, 4, 4 ms después. Peor caso **87 ms** |
 | Con red | La medición se hizo **sin red**, que es el caso difícil |
 
 **Alcance de la medición, con sus límites.** Es una medición, no una garantía: cubre
@@ -166,21 +174,36 @@ hacer (que no escribe nada).
 | **Las tres garantías** | Avisar, revertir y no dejar datos a medias. Ver RF-1 |
 | **Sin internet** | La computadora sin conexión a la red |
 
-### Los cuatro caminos de escritura de hoy
+### Los cuatro datos y los caminos que tienen hoy
 
-Este inventario es lo que hace que las cosas de esta especificación no sean inventadas:
-**hoy hay cuatro datos guardados y cuatro caminos distintos, y uno no tiene ninguna
-protección.**
+El inventario es la base de todo lo que sigue, y está **verificado contra el código el
+2026-10-05**: cada fila dice en qué línea está. No es una descripción del diseño
+previsto: es lo que hay.
 
-| Dato | Camino de escritura hoy | Si falla, ¿qué pasa? |
-|------|-------------------------|----------------------|
-| Materias y documentos | Camino protegido: mide el espacio, avisa y **vuelve a dejar lo anterior** si la escritura se corta | Datos intactos, el cambio se deshace en pantalla |
-| Minutos de Pomodoro (formato viejo) | **Solo se lee**, no se escribe más | — |
-| Minutos de estudio por secciones | Camino propio: avisa, pero **solo** si el error es de cuota | Si falla por otro motivo, el error sube y los minutos quedan en memoria |
-| Anotaciones del calendario | **Ninguno** | Si falla, el error sube, la anotación queda en memoria y **no está guardada** |
+| Dato | Clave | Lectura hoy | Escritura hoy | Garantías |
+|------|-------|--------------|----------------|-----------|
+| Materias y documentos | `cuadernoVirtual` | `cargarDatos()` (`app.js:267-294`): `try`, y si el JSON no se puede leer avisa y arranca vacío **sin pisar lo anterior** | `guardarDatos()` (`app.js:316-388`): mide espacio, avisa, y **vuelve a dejar lo anterior** si la escritura se corta | **Las tres** |
+| Minutos heredados del Pomodoro | `pomodoroSesiones` | `app.js:1445-1447`, **`JSON.parse` sin `try`, y en código de nivel superior** | **No se escribe** | **Ninguna** |
+| Minutos de estudio por secciones | `mapaCalorSecciones` | `app.js:1465-1467` y `app.js:1511-1513`: `JSON.parse` sin `try`, dos veces | `app.js:1473-1482`: `try` que **solo avisa si `debeRevertir(error)`** | **Una, y solo en un caso** |
+| Anotaciones del calendario | `calendarioAnotaciones` | `cargarAnotaciones()` (`app.js:1575-1580`): `JSON.parse` sin `try` | `guardarAnotaciones()` (`app.js:1582-1584`): `setItem` **sin `try` y sin nada** | **Ninguna** |
 
-Después de esta especificación, los cuatro grupos se leen y se escriben por caminos que dan
-las mismas garantías.
+Dos precisiones sobre este inventario, porque cambian el orden del trabajo y ninguna se
+deduce leyendo la tabla:
+
+**La escritura de los minutos de estudio falla en silencio, y no "sube el error".** El
+`catch` de `app.js:1475` **atrapa todos los errores**, no solo los de cuota: lo único
+que hace con uno que no es de cuota es un `return` sin avisar. La consecuencia es peor
+que un error visible: es exactamente el **fallo silencioso** que la constitución
+prohíbe, y no deja ni un error en la consola que lo delate.
+
+**La lectura de los minutos heredados es la única que tumba el arranque.** Está en
+código de nivel superior (`app.js:1445-1447`), así que un `JSON.parse` que lance deja
+la página **sin abrir**, sin cartel y sin aviso: no es un dato que falta, es la
+aplicación entera. Las otras tres lecturas pasan dentro de funciones, y lo que
+fallan es una pantalla.
+
+Después de esta especificación, los cuatro grupos se leen y se escriben por caminos
+que dan las mismas garantías.
 
 ## Requisitos funcionales
 
@@ -212,6 +235,29 @@ almacén nuevo.
 > **Lo que se reusa es la decisión y la reversión, no los textos.** El texto que nombra el
 > muro de 5 MB y el umbral del 95 % **desaparece**, porque ese muro ya no existe (RNF-6). Un
 > mensaje que anuncia un muro que no está es peor que no avisar.
+
+**Los avisos de escritura se quedan en `alert()`, y esa es la decisión.** Los caminos de
+escritura de hoy avisan con `alert()` (`app.js:210` y `app.js:225`), no con el cartel de
+arriba. **Eso no se cambia en esta especificación**: los avisos de fallo al guardar —los
+que ya existen y los nuevos de RF-4— siguen siendo `alert()`.
+
+El cartel de arriba (`mostrarAvisoDatos`, `app.js:302`) queda **solo para las lecturas**, que
+es lo que hace hoy y por un motivo escrito en `MEMORY.md`: un `alert()` en cada arranque
+por un problema de un respaldo viejo empuja a no abrir la aplicación.
+
+> **Por qué no se unifica:** unificar obligaría a mover los avisos de escritura al cartel no
+> bloqueante, y eso cambia **cómo se avisa toda la aplicación**, no un texto. RNF-6 declara
+> que nada de lo que se ve cambia fuera de la lista de textos de más abajo, y migrar cuatro
+> `alert()` no está en esa lista. Queda anotado como deuda, no como olvido.
+
+**El texto de "no se pudo guardar" ofrece exportar sin nombrar el espacio como causa.**
+Decidido el 2026-10-05, para que RF-1 y RNF-6 no se contradigan. El texto de hoy
+(`mensajeFalloAlGuardar`, `app.js:194-200`) dice *"Puede ser que el almacenamiento esté
+lleno. Exportá tus documentos para liberar espacio."* Con el almacén nuevo, la causa ya no
+es la cuota del navegador, así que **el motivo no se nombra**: el texto dice que no se pudo
+guardar, que lo que ya estaba quedó como estaba, y **ofrece exportar como salida** —que
+seguir siendo la salida es lo que RNF-6 dice— **sin decir que sea para liberar espacio**.
+Ofrecer la salida es lo que se conserva; nombrar una causa que ya no se sabe, no.
 
 **De dónde se lee cada grupo, después de migrar.** Esto hoy **no está especificado en
 ningún lado**, y es lo que hay que dejar dicho:
@@ -400,6 +446,20 @@ Los dos detalles de hoy:
 - La función que **carga** las anotaciones interpreta el valor guardado sin ninguna
   protección: si no es un texto válido, **se rompe la apertura del calendario**.
 
+**Y las lecturas de los minutos, que llegan por el mismo punto de apoyo.** RF-4 no las
+deja de lado, y cada una rompe algo distinto, que es lo que fija el orden del trabajo:
+
+| Lectura | Dónde | Qué rompe si el valor guardado no se puede interpretar |
+|---------|-------|--------------------------------------------------------|
+| Minutos heredados | `app.js:1445-1447` | **La aplicación no abre.** Es código de nivel superior: un `JSON.parse` que lance deja la página muerta, sin cartel y sin aviso |
+| Minutos de estudio | `app.js:1465-1467` y `app.js:1511-1513` | Se rompe el cierre de la sección y **la consulta del mapa de calor**, que es la función pública que ya dejó el mapa en blanco una vez |
+| Anotaciones | `app.js:1575-1580` | Se rompe la apertura del calendario |
+
+**La de los minutos heredados es la que hay que atender primero.** No porque sea la más
+complicada, sino porque es la única que **no falla una pantalla**: falla la aplicación, y
+sin aviso. Y es la que se va a tocar antes que ninguna otra, porque el plan mueve la
+lectura de arranque al almacén nuevo.
+
 **Criterios de aceptación**
 
 - CUANDO el usuario agrega, edita o quita una anotación del calendario, ENTONCES el sistema
@@ -412,8 +472,12 @@ Los dos detalles de hoy:
   lo que estaba guardado y **no borra nada**.
 - SI no se puede leer lo que estaba guardado y el usuario hace un cambio, ENTONCES el
   sistema **no escribe nada** y avisa.
-- El mismo criterio vale para las lecturas de los minutos de estudio, que pasan por el
-  mismo punto de apoyo: no hacen falta un requisito aparte.
+- El mismo criterio vale para **las tres lecturas de minutos y anotaciones**, que pasan por
+  el mismo punto de apoyo: no hacen falta un requisito aparte.
+- SI los minutos heredados guardados **no se pueden interpretar**, ENTONCES la aplicación
+  **abre igual**: sigue con lo que ya tenía en memoria, avisa por el cartel de arriba que no
+  pudo leer lo que estaba guardado y **no borra nada**. Antes esta lectura tumbaba el
+  arranque entero (`app.js:1445-1447`), sin aviso; ese caso tiene comprobación propia.
 - Este defecto está **comprobado antes de cambiar nada**: hay una prueba que falla con el
   código de hoy, y después pasa. Una prueba que ya pasara antes de tocar nada no
   demostraría nada.
@@ -652,6 +716,12 @@ trabajos que existen, con su motivo.
       cuatro cosas que dice RF-3 y **no vuelve al almacén viejo** (RF-3)
 - [ ] El aviso de "casi lleno" **no aparece nunca**, y el texto de fallo al guardar ya no
       nombra un muro que no existe (RF-1, RNF-6)
+- [ ] El aviso de fallo al guardar sigue siendo un **`alert()`**, y el cartel de arriba lo
+      usan **solo las lecturas**. Hay una comprobación que falla si eso se invierte (RF-1)
+- [ ] El texto de "no se pudo guardar" **ofrece exportar sin nombrar el espacio**, y hay una
+      comprobación que falla si vuelve a nombrarlo (RF-1, RNF-6)
+- [ ] **Los ocho llamadores que guardan datos esperan la escritura antes de redibujar**: si
+      la escritura falla, la pantalla nunca llegó a mostrar el cambio (RF-1)
 - [ ] Exportar incluye los cuatro grupos, e importar un respaldo devuelve también el
       historial de estudio y las anotaciones (RF-5)
 - [ ] El aviso previo de importar nombra los cuatro grupos que se van a perder (RF-5)
@@ -684,6 +754,9 @@ trabajos que existen, con su motivo.
 | ¿Exportar sigue siendo manual? | **Sí.** Es el mecanismo de salida, y ahora incluye los cuatro grupos. La copia automática periódica queda afuera | Usuario | 2026-10-04 |
 | ¿Se arregla lo de `vendor/` y las fuentes? | **No.** No da ni un KB de cuota del navegador, y los PDF seguirían sin abrir sin internet | Usuario | 2026-10-04 |
 | ¿Se coordinan dos pestañas? | **No.** Es deuda: con el almacén por registro, la colisión se limita a un registro | Usuario | 2026-10-04 |
+| ¿Los avisos de fallo al guardar van en `alert()` o en el cartel de arriba? | **`alert()`, como hoy.** El cartel de arriba queda solo para las lecturas. Migrar los avisos de escritura al cartel cambiaría cómo se avisa toda la aplicación, y RNF-6 no lo declara. Queda anotado como deuda | Usuario | 2026-10-05 |
+| ¿El texto de "no se pudo guardar" nombra el espacio como causa? | **No.** Ofrece exportar como salida, **sin decir que sea para liberar espacio**: con el almacén nuevo, esa causa ya no se sabe | Usuario | 2026-10-05 |
+| ¿Los caminos que guardan pasan a ser `async`? | **Sí.** Es lo único que puede cumplir la garantía de revertir: con el almacén nuevo la escritura es asíncrona, y si el llamador no espera no puede deshacer nada. Toca los ocho llamadores que ya usan `guardarRevirtiendoSiFalla` | Usuario | 2026-10-05 |
 
 ## Dudas abiertas
 

@@ -43,9 +43,9 @@ const RAIZ = path.join(__dirname, '..');
 
 const ORDEN = [
     'js/logica/mapa-calor.js',
-    'js/logica/almacenamiento.js',
     'js/logica/consentimiento.js',
     'js/datos/secciones.js',
+    'js/datos/almacenamiento.js',
     'js/logica/layout.js',
     'js/logica/fechas.js',
     'js/logica/anotaciones.js',
@@ -67,7 +67,7 @@ const ORDEN = [
 // justo lo que estos tests quieren comprobar.
 
 const IDS = [
-    'anotacionesExistentes', 'arbolNavegacion', 'breadcrumbs',
+    'anotacionesExistentes', 'arbolNavegacion', 'avisoDatos', 'breadcrumbs',
     'btnAddMateria', 'btnCalendario', 'btnCancelarMateria',
     'btnCerrarCalendario', 'btnConfig', 'btnCrearMateria',
     'btnExportar', 'btnGuardarAnotacion', 'btnImportar',
@@ -214,6 +214,268 @@ function buscar(raiz, sel) {
     return resultados;
 }
 
+// ---------- El almacén del navegador falso ----------
+//
+// ## Por qué está acá y no en cada test
+//
+// La app abre el almacenamiento del navegador antes de dibujar nada, y **si no abre
+// no dibuja nada**: es la decisión de RF-3. Sin `indexedDB` en el contexto, el arnés
+// era un navegador al que le falta el almacén, y los veinte tests de navegador
+// recorrieron el camino de "no abre". No era un bug de la app: era un arnés que ya no
+// llegaba al punto de la app.
+//
+// ## Qué modela y qué no — leído antes de confiar en él
+//
+// **Modela:** `open` con `onupgradeneeded`, `createObjectStore`, `transaction`, y en
+// un almacén `get`, `put` y `delete`, con la transacción IVA y `oncomplete` al final.
+//
+// **NO modela, y no se debe usar para probarlo:**
+//
+// - **La persistencia**: los datos viven en memoria y se pierden al terminar el test.
+// - **Las transacciones reales**: no hay concurrencia, ni se bloquea, ni se aborta por
+//   cuota. Que una escritura sea demasiado grande **no falla acá**.
+// - **La versión y las migraciones**: `open` no falla por estar bloqueado.
+// - **`onblocked`**: no se dispara nunca.
+//
+// Eso no es un defecto del mock: es la frontera. Por eso **el comportamiento del
+// almacén se prueba en Chrome**, y no acá. Este sirve para que el arnés pueda llegar
+// al arranque, y para probar los caminos de fallo que uno rompe a propósito.
+//
+// ## Los fallos se provocan a mano
+//
+// `modo` permite romper el almacén de las tres formas que la app tiene que tolerar:
+// que no exista, que no abra, y que abra pero no escriba. Sin eso, los caminos de
+// error no se podrían recorrer nunca —y un camino que no se recorre no está probado.
+//
+// ## Por qué en microtareas y no con `setTimeout`
+//
+// Porque en este contexto `setTimeout` **no dispara nada** (está así a propósito, para
+// que los tests sean deterministas). Con `setTimeout`, ninguna escritura terminaría
+// nunca y la prueba se quedaría esperando hasta el plazo. Con microtareas el
+// comportamiento es asíncrono —como en el navegador— y termina solo.
+
+function crearIndexedDB(modo = 'bien') {
+    const bases = new Map();
+
+    // `sin-marca` falla **solo** la escritura del registro de migración, y nada más.
+    //
+    // Hace falta que sea tan preciso: si fallara toda escritura en `metadatos`,
+    // también fallaría el **registro de prueba de disponibilidad**, la aplicación
+    // concluiría que el almacén no abre, y no se llegaría nunca a la migración. Es
+    // el caso límite de RF-2: los datos entran bien y lo único que no se escribe es
+    // la marca.
+    // Los otros modos existen para **reescribir las cinco protecciones de escritura
+    // contra el almacén nuevo**. Antes rompían `localStorage.setItem`; ahora hay que
+    // romper `indexedDB`, y cada modo representa un fallo distinto:
+    //
+    // | Modo | Qué rompe | Qué protección comprueba |
+    // |------|-----------|--------------------------|
+    // | `sin-espacio` | `put` lanza con `QuotaExceededError` | Sin espacio: no se escribe nada y se avisa |
+    // | `abortar` | La transacción dispara `onabort` | Una transacción a medias no rompe la pantalla |
+    // | `lectura-falla` | `get` lanza | Si no se puede leer, no se escribe encima |
+    //
+    // Y `sin-marca`, que es el caso límite de la migración.
+    //
+    // ## Por qué los tres modos tocan SOLO los almacenes de datos
+    //
+    // Porque los tres romperían también la **prueba de disponibilidad**, que escribe en
+    // `metadatos`. Y si la disponibilidad fallara, la app no abriría: no estaríamos
+    // probando una escritura que falla, sino una app que no abre, que es otra cosa.
+    // El mismo error que se corrigió con `sin-marca`, un nivel más arriba.
+    let modoActual = modo;
+
+    // `metadatos` es el almacén de la cuenta de la app: la prueba de disponibilidad y
+    // la marca de migración. Los fallos de los modos apuntan a lo del **usuario**.
+    const esAlmacenDeDatos = nombre => nombre !== 'metadatos';
+
+    const falloDeEspacio = (nombreAlmacen, clave) =>
+        esAlmacenDeDatos(nombreAlmacen) && modoActual === 'sin-espacio'
+        || (modoActual === 'sin-marca' && nombreAlmacen === 'metadatos' && clave === 'migracion');
+
+    function baseDe(nombre, version) {
+        if (!bases.has(nombre)) {
+            bases.set(nombre, { almacenes: new Map(), version: 0 });
+        }
+        const base = bases.get(nombre);
+        if (version > base.version) base.version = version;
+        return base;
+    }
+
+    function conexionDe(nombre, base) {
+        return {
+            name: nombre,
+            version: base.version,
+            objectStoreNames: {
+                contains: (n) => base.almacenes.has(n),
+                get length() { return base.almacenes.size; },
+                // `objectStoreNames` en el navegador es una lista indexable.
+                item: (i) => [...base.almacenes.keys()][i]
+            },
+            createObjectStore(n) {
+                if (!base.almacenes.has(n)) base.almacenes.set(n, new Map());
+                return { name: n };
+            },
+            deleteObjectStore(n) { base.almacenes.delete(n); },
+            transaction(nombres, modoTransaccion) {
+                // Siempre un arreglo: `transaction()` acepta un nombre o una lista, y
+                // el modo `abortar` necesita mirar el nombre. Con un string suelto,
+                // `nombres[0]` es el **primer carácter** —`'m'` de `'materias'`— y el
+                // modo no compararía nunca nada.
+                const lista = Array.isArray(nombres) ? nombres : [nombres];
+                const registros = [];
+
+                const transaccion = {
+                    error: null,
+                    objectStore(n) {
+                        if (!base.almacenes.has(n)) {
+                            throw new Error('No hay un almacén llamado "' + n + '"');
+                        }
+                        const datos = base.almacenes.get(n);
+
+                        return {
+                            get(clave) {
+                                const peticion = {
+                                    onsuccess: null, onerror: null, result: undefined
+                                };
+                                registros.push({
+                                    peticion,
+                                    disparar: () => {
+                                        // `lectura-falla`: la lectura no se puede hacer.
+                                        // El caso real es un almacén bloqueado o un disco
+                                        // que no responde; lo que importa es que la app
+                                        // **no escriba encima de lo que no pudo leer**.
+                                        if (modoActual === 'lectura-falla' && esAlmacenDeDatos(n)) {
+                                            const error = new Error('no se pudo leer');
+                                            peticion.error = error;
+                                            if (peticion.onerror) peticion.onerror(error);
+                                            return;
+                                        }
+                                        peticion.result = datos.get(clave);
+                                        if (peticion.onsuccess) peticion.onsuccess();
+                                    }
+                                });
+                                return peticion;
+                            },
+                            put(valor, clave) {
+                                if (falloDeEspacio(n, clave)) {
+                                    throw Object.assign(new Error('sin cuota'), {
+                                        name: 'QuotaExceededError'
+                                    });
+                                }
+                                const peticion = { onsuccess: null, onerror: null };
+                                registros.push({
+                                    peticion,
+                                    disparar: () => {
+                                        datos.set(clave, valor);
+                                        if (peticion.onsuccess) peticion.onsuccess();
+                                    }
+                                });
+                                return peticion;
+                            },
+                            delete(clave) {
+                                const peticion = { onsuccess: null, onerror: null };
+                                registros.push({
+                                    peticion,
+                                    disparar: () => {
+                                        datos.delete(clave);
+                                        if (peticion.onsuccess) peticion.onsuccess();
+                                    }
+                                });
+                                return peticion;
+                            }
+                        };
+                    },
+                    abort() { registros.length = 0; },
+
+                    // Al crear la transacción ya se programa su cierre: los `get` y
+                    // los `put` se registran de forma **sincrónica** justo después, y
+                    // la microtarea corre cuando ya están todos.
+                    //
+                    // Y se dispara **último**, como en el navegador: por eso
+                    // `escribirRegistro()` puede esperar `oncomplete` en vez de
+                    // conformarse con el `put`.
+                    _alCerrar: true
+                };
+
+                Promise.resolve().then(() => {
+                    // `abortar`: **una escritura** se corta. Solo `readwrite`: una
+                    // lectura que se cortara no probaría lo que dice esta protección
+                    // (que una escritura a medias no rompe la pantalla), y además
+                    // rompería el `leerGrupos()` que el test usa para mirar lo que
+                    // había antes.
+                    if (modoActual === 'abortar' && modoTransaccion === 'readwrite'
+                        && lista.some(esAlmacenDeDatos)) {
+                        const error = Object.assign(
+                            new Error('la transacción se cortó'),
+                            { name: 'AbortError' }
+                        );
+                        // Las peticiones pendientes reciben `onerror`: si se las
+                        // abandona en silencio, quien espera un `onsuccess` **se queda
+                        // esperando para siempre** y el arranque no termina nunca.
+                        for (const { peticion } of registros) {
+                            peticion.error = error;
+                            if (peticion.onerror) peticion.onerror(error);
+                        }
+                        registros.length = 0;
+                        if (transaccion.onabort) transaccion.onabort(error);
+                        return;
+                    }
+
+                    for (const { disparar } of registros) disparar();
+                    if (transaccion.oncomplete) transaccion.oncomplete();
+                });
+
+                return transaccion;
+            },
+            close() {}
+        };
+    }
+
+    return {
+        // Para cambiar cómo se comporta **después** de crearlo. Ver arriba.
+        set modo(nuevo) { modoActual = nuevo; },
+        get modo() { return modoActual; },
+
+        open(nombre, version) {
+            const peticion = {
+                onsuccess: null, onerror: null,
+                onupgradeneeded: null, onblocked: null,
+                result: null, error: null
+            };
+
+            Promise.resolve().then(() => {
+                if (modoActual === 'no-abre') {
+                    peticion.error = new Error('el almacén no abre');
+                    if (peticion.onerror) peticion.onerror(peticion.error);
+                    return;
+                }
+
+                // **Se pregunta antes de crearla.** `baseDe()` sube la versión, así
+                // que mirarla después daría "ya existía" siempre, `onupgradeneeded`
+                // no se dispararía nunca, y los almacenes no se crearían: la prueba
+                // de disponibilidad caería en "no se pudo escribir" sin que nadie
+                // supiera por qué.
+                const existed = bases.has(nombre);
+                const base = baseDe(nombre, version || 1);
+                const conexion = conexionDe(nombre, base);
+                peticion.result = conexion;
+
+                if (!existed) {
+                    if (peticion.onupgradeneeded) peticion.onupgradeneeded(peticion);
+                }
+                if (peticion.onsuccess) peticion.onsuccess(peticion);
+            });
+
+            return peticion;
+        },
+
+        deleteDatabase(nombre) {
+            bases.delete(nombre);
+            return { onsuccess: null, onerror: null };
+        }
+    };
+}
+
 // ---------- El almacenamiento falso ----------
 
 // Las claves van **como propiedades del objeto**, y no adentro de un `_d`.
@@ -270,9 +532,22 @@ function romper(contexto, metodo, mensaje) {
  * Monta un navegador falso y carga los scripts en orden.
  *
  * @param {object} datosAlmacenamiento - lo que hay en `localStorage` al arrancar
- * @returns {{contexto, errores}} el contexto, y los errores que se ven al cargar
+ * @param {object} [opciones]
+ * @param {'bien'|'no-abre'|'sin-espacio'|'sin-marca'} [opciones.almacen]
+ *   cómo se comporta el almacén del navegador. `'no-abre'` es el camino de "la
+ *   aplicación no abre". `'sin-marca'` falla **solo** las escrituras
+ *   en `metadatos`, que es donde va la marca de migración: simula el caso en que la
+ *   copia de los datos termina bien y la marca no llega a escribirse.
+ * @param {boolean} [opciones.sinAlmacen] no poner `indexedDB` en el contexto, como
+ *   un navegador que no lo soporta
+ * @param {object} [opciones.indexedDB] un almacén falso ya creado, para **compartirlo
+ *   entre dos cargas**. Es lo que permite probar "si la copia se corta, en la
+ *   siguiente apertura se reintenta": sin esto, cada carga tendría su almacén y
+ *   siempre empezaría vacío.
+ * @returns {{contexto, errores, almacen, inicio}} el contexto, los errores que se ven
+ *   al cargar, y **la promesa del arranque**
  */
-function cargarComoNavegador(datosAlmacenamiento = {}) {
+function cargarComoNavegador(datosAlmacenamiento = {}, opciones = {}) {
     const almacen = crearAlmacenamiento(datosAlmacenamiento);
     const cuerpo = crearElemento('body');
 
@@ -320,9 +595,78 @@ function cargarComoNavegador(datosAlmacenamiento = {}) {
         // nada es lo que espera el código: no usa el resultado.
         Notification: { permission: 'default', requestPermission() {} },
         AudioContext: null, webkitAudioContext: null,
-        FileReader: function () {},
+        // `FileReader`, que la app usa para leer los archivos que el usuario sube. Estaba como
+        // un `function () {}` —un stub que no hace nada—, y eso dejaba **todo el camino de
+        // subida sin poder probarse**: `crearDocumento()` llegaba a `readAsDataURL` y
+        // reventaba con "readAsDataURL is not a function".
+        //
+        // Es un global del navegador, así que va acá. Y leer un archivo es una de las dos
+        // cosas que más usa la aplicación: sin esto, "subir un PDF" era código que nadie
+        // podía comprobar con `node --test`.
+        //
+        // El archivo trae los bytes en `_bytes`. Un `File` real los trae de verdad; un
+        // objeto de prueba los pone ahí, y se dice en el nombre para que nadie lo confunda
+        // con el contenido del documento.
+        FileReader: function () {
+            this.onload = null;
+            this.onerror = null;
+            this.result = null;
+
+            this.readAsDataURL = function (file) {
+                const self = this;
+                Promise.resolve().then(() => {
+                    const bytes = file._bytes || new Uint8Array(0);
+                    self.result = 'data:' + (file.type || 'application/octet-stream')
+                        + ';base64,' + Buffer.from(bytes).toString('base64');
+                    if (self.onload) self.onload();
+                }, (error) => {
+                    if (self.onerror) self.onerror(error);
+                });
+            };
+
+            this.readAsText = function (file) {
+                const self = this;
+                Promise.resolve().then(() => {
+                    self.result = Buffer.from(file._bytes || new Uint8Array(0))
+                        .toString('utf8');
+                    if (self.onload) self.onload();
+                }, (error) => {
+                    if (self.onerror) self.onerror(error);
+                });
+            };
+        },
         Blob: function () {},
         File: function () {},
+
+        // `atob`, que la app usa para pasar lo que está guardado —el archivo codificado
+        // en base64 dentro de una URL de datos— a los bytes que pdf.js y mammoth piden.
+        //
+        // **Es un global del navegador, así que va acá y no en `app.js`.** Lo contrario
+        // sería escribir un descodificador de base64 en la aplicación solo para que un test
+        // pueda correrla.
+        //
+        // **La primera versión lo decodificaba a mano y estaba mal.** Tiraba los
+        // caracteres que no eran de base64 en vez de fallar, así que `"esto no es una URL"`
+        // salía como nueve bytes de basura y los tests no distinguían "contenido roto" de
+        // "contenido válido". Un simulador que **acepta lo que el navegador rechaza** no
+        // sirve para probar el camino del error.
+        //
+        // `atob` de verdad **lanza** con una cadena que no es base64. Esto también.
+        atob(texto) {
+            const cadena = String(texto);
+
+            if (!/^[A-Za-z0-9+/]*={0,2}$/.test(cadena) || cadena.length % 4 !== 0) {
+                throw new Error('InvalidCharacterError: la cadena no es base64');
+            }
+
+            return Buffer.from(cadena, 'base64').toString('binary');
+        },
+        // El almacén del navegador. Sin esto la app toma el camino de "no abre" —
+        // que es lo correcto para un navegador sin almacén, pero no lo que hay que
+        // medir en los veinte tests de comportamiento. Ver `crearIndexedDB`.
+        ...(opciones.sinAlmacen
+            ? {}
+            : { indexedDB: opciones.indexedDB || crearIndexedDB(opciones.almacen) }),
         fetch() { return Promise.reject(new Error('sin red en el test')); },
         alert() {}, confirm: () => true, prompt: () => null,
         Date, Math, JSON, Object, Array, Set, Map, Number, String, Boolean,
@@ -355,12 +699,24 @@ function cargarComoNavegador(datosAlmacenamiento = {}) {
     }
 
 
-    return { contexto, errores, almacen };
+    // `Promise` y `queueMicrotask` no están en la lista de arriba a propósito: son
+    // los que usa el almacén falso para resolver. `Promise` es global en el
+    // contexto de `vm`, así que alcanza con no shadowearlo.
+
+    // El arranque es una promesa y vive en la API. Se devuelve para que el test la
+    // **espere**: con el arranque asíncrono, un rechazo se perdería, porque acá solo
+    // se juntan errores **síncronos** y la `console` no hace nada.
+    const inicio = contexto.CuadernoVirtual && contexto.CuadernoVirtual.inicio
+        ? contexto.CuadernoVirtual.inicio
+        : Promise.resolve();
+
+    return { contexto, errores, almacen, inicio };
 }
 
 module.exports = {
     cargarComoNavegador,
     crearAlmacenamiento,
+    crearIndexedDB,
     romper,
     crearElemento,
     crearNodoTexto,

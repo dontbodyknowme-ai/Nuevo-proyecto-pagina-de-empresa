@@ -27,6 +27,8 @@
 //
 // Herramientas: fetch y WebSocket, que ya trae Node. Sin npm install. Principio 1.
 
+const { sembrar, comoRespaldo } = require('./sembrar.js');
+
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -225,14 +227,14 @@ function conectar(url) {
 
 // ---------- Capturar un escenario ----------
 
-// `Runtime.evaluate` no recibe argumentos: hay que meter los datos en el texto
-// de la expresión. Por eso se arma con `callFunctionWith` en vez de `args`.
-function expresionCapturar(materias) {
-    return `(function () {
-        localStorage.setItem('cuadernoVirtual', ${JSON.stringify(JSON.stringify(materias))});
-        return 'listo';
-    })()`;
-}
+// La siembra **no** es de acá: vive en `herramientas/sembrar.js`, y la usa también
+// `verificar-layout.js`. Escribirla dos veces garantiza que una de las dos se quede vieja
+// sin que nadie lo note.
+//
+// Antes esta función ponía `localStorage.setItem('cuadernoVirtual', ...)`. Con la
+// aplicación leyendo del almacén del navegador, eso ya no sembraba nada: el primer
+// escenario migraba y dejaba la marca, y todos los siguientes quedaban midiendo una
+// aplicación vacía. Por eso la línea base no daba IDÉNTICO.
 
 function expresionListo() {
     return `(function () {
@@ -305,16 +307,28 @@ function leerExcepciones(eventos) {
 
         const captura = [];
 
-        for (const caso of CASOS) {
-            // 1. Sembrar los datos
-            await cdp.enviar('Runtime.evaluate', {
-                expression: expresionCapturar(caso.materias)
-            });
-
-            // 2. Recargar para que la app se dibuje desde cero, y esperar a que
-            //    esté de verdad. Dormir un tiempo fijo y adivinar fue lo que
-            //    hizo que la primera versión de esta sonda guardara todo vacío.
+        // Los dos callbacks que `sembrar.js` necesita. Se arman acá porque cada
+        // herramienta habla con el CDP distinto, y el helper no tiene por qué saberlo.
+        const navegarAIndice = async () => {
             await cdp.enviar('Page.navigate', { url: INDICE });
+            await dormir(1400);
+        };
+
+        const evaluarEnIndice = async (expression, esPromesa) => {
+            const r = await cdp.enviar('Runtime.evaluate', {
+                expression,
+                awaitPromise: !!esPromesa,
+                returnByValue: true
+            });
+            // OJO: `enviar` resuelve con `m.result`, y la respuesta de
+            // `Runtime.evaluate` tiene su resultado adentro de `result`.
+            return r && r.result ? r.result.value : undefined;
+        };
+
+        for (const caso of CASOS) {
+            // 1. Sembrar por el camino de escritura de la aplicación y recargar, para
+            //    que la app se dibuje desde cero. Ver `herramientas/sembrar.js`.
+            await sembrar(navegarAIndice, evaluarEnIndice, comoRespaldo(caso.materias));
 
             let listo = false;
             for (let intento = 0; intento < 40 && !listo; intento++) {
@@ -326,7 +340,7 @@ function leerExcepciones(eventos) {
             }
             if (!listo) throw new Error(`la página no llegó a 'complete' en el caso ${caso.nombre}`);
 
-            // 3. Leer lo que quedó en pantalla
+            // 2. Leer lo que quedó en pantalla
             const leido = await cdp.enviar('Runtime.evaluate', {
                 expression: expresionLeer(),
                 returnByValue: true

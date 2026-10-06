@@ -103,6 +103,512 @@ node herramientas/comparar-arbol.js
 hablarle directo por el protocolo DevTools con el WebSocket nativo de Node.
 Ver el punto `4.quater` de `AGENTS.md`.
 
+### 3.quater · La disponibilidad del almacén, medida (2026-10-05)
+
+```powershell
+node herramientas/medir-disponibilidad.js
+```
+
+Abre Chrome con un perfil **temporal**, desconecta la red **de verdad** por el
+protocolo DevTools, carga la app **desde el archivo** y mide cuánto tarda
+`probarDisponibilidad()` en cinco vueltas.
+
+| Qué | Resultado |
+|-----|-----------|
+| Navegador | **Chrome 154.0.8037.93**, Windows |
+| Protocolo y origen | `file:` — origen `file://` |
+| Con red | **Desconectada de verdad**, no simulada |
+| ¿La aplicación abre? | **Sí**, con la red desconectada |
+| ¿Dice que el almacén sirve? | **Sí**, en las 5 vueltas |
+| Primer tiempo (en frío) | **87 ms** |
+| Las cuatro siguientes | **8, 6, 4, 4 ms** |
+| Peor caso observado | **87 ms** |
+| Plazo en el código | **2000 ms** — bajado de 5000 con el dato en la mano |
+| Margen | **23 veces** sobre el peor caso |
+
+**El primer tiempo es casi 20 veces más grande que los otros.** No es ruido: es la
+apertura en frío, la primera vez que se crea la base. Un promedio la escondería, y
+por eso la sonda mide las cinco y muestra cada una.
+
+### La segunda corrida dio 9 ms, y esa es la trampa (2026-10-05)
+
+Al repetir la medición con el plazo nuevo, todo estaba **caliente**: 9, 7, 4, 4,
+3 ms. Peor caso **9 ms**, no 87.
+
+| Corrida | Peor caso | Por qué |
+|---------|-----------|---------|
+| Primera | **87 ms** | Navegador y archivos **completamente en frío**: primer arranque de Chrome en la máquina |
+| Segunda | **9 ms** | Todo caliente: el binario de Chrome y la app ya en caché |
+
+**El número con el que se diseña es 87 ms, no 9.** No porque 9 sea irreal, sino
+porque **el caso que hay que cubrir es el peor, no el típico**. Un falso negativo hace
+que la aplicación **no abra**, así que lo que importa es qué pasa en la máquina más
+lenta y más fría, no en la que ya se usó.
+
+> **Si se hubiera registrado el 9, el plazo se bajaría otra vez —y estaría mal.** Con
+> 9 ms, 2000 da un margen de 222 veces, y cualquiera concluiría que 300 ms alcanzan.
+> Los 300 ms funcionarían en toda máquina que se haya usado hoy, y **fallarían en la
+> primera vez después de encender la computadora**, que es exactamente cuando el
+> usuario se está por sentar a estudiar.
+
+**El plazo bajó de 5000 a 2000 ms, y esa es la parte que interesa.** Los 5000 se
+eligieron **sin medir**, por la asimetría de las consecuencias. Con 87 ms de peor
+caso, 5000 daba un margen de 57 veces: prudente, pero tan holgado que **el plazo
+dejó de proteger nada**. Un plazo que ninguna circunstancia real puede alcanzar no
+es una garantía, es un número decorativo. Con 2000 el margen sigue siendo de 23
+veces, y el riesgo —un falso negativo hace que la app **no abra**— queda cubierto.
+
+> **Una medición puede corregir el origen, y lo corrige.** La spec 008 afirmaba que el
+> origen es `null`. Lo medido es **`file://`**. No cambiaba nada funcional, pero es una
+> afirmación escrita que una medición contradice: por eso está corregido en la spec y
+> anotado acá.
+
+## Un test que pasa porque el simulador es educado no prueba nada (2026-10-05)
+
+Escritura de una memoria y otra que se pisan. Se escribió el test
+*"un latido y una pausa que se pisan no se pisan entre ellos"*, se **rompió la
+serialización a propósito**, y el test dio **verde**.
+
+No era un test malo: era un test **educado**.
+
+El simulador de `test/dom-falso.js` resuelve las transacciones **en el mismo orden en
+que se le piden**. La carrera —dos escrituras al mismo grupo que terminan en orden
+contrario al pedido— **nunca llegaba a darse**. En el navegador, dos escrituras a
+IndexedDB terminan en el orden que marque el disco, y el orden no es el que se pidió.
+
+Con el simulador salen siempre en orden, el test no puede distinguir el código bueno del
+roto, y por eso pasa.
+
+**La forma de hacerlo**: cuelgar una `Promise` en la primera escritura y soltarla
+después de que la segunda haya terminado. Así la primera —que es la lenta— **acaba
+última**, y el test mide lo que importa.
+
+```javascript
+let liberar;
+const espera = new Promise(resolve => { liberar = resolve; });
+
+almacen.guardarGrupo = (grupo, valor) => (
+    lenta ? espera.then(() => original(grupo, valor)) : original(grupo, valor)
+);
+
+// ...arrancar las dos escrituras...
+await new Promise(resolve => setImmediate(resolve));
+liberar();               // la lenta sale ahora, o sea, última
+await Promise.all([una, otra]);
+```
+
+Eso lo cazó: **0 → 1**.
+
+**La regla, para escribirla en la constitution si hace falta:** un simulador que resuelve
+más rápido de lo que pasa en la realidad **oculta la clase de defecto más difícil de
+encontrar**, que es el de orden. Todo lo demás —un `null`, un número mal calculado, un
+texto que no escapa— se ve igual en el simulador y en el navegador. El orden, no.
+
+Y sale del mismo lugar que ya estaba anotado acá: **un mock que miente hace que un
+camino nunca se pruebe** (2026-10-01). Esta vez el mock no mentía sobre **qué** hay: mentía
+sobre **cuándo**.
+
+## La memoria que se llena una vez y nunca se actualiza (2026-10-05)
+
+Apareció al probar el latido de los minutos de estudio, y **venía de la spec 008, T3**.
+
+`gruposEnMemoria` —el caché de lo leído del almacén— se llenaba **una vez, al arrancar**,
+y **no se volvía a tocar al guardar**. O sea: cada escritura armaba su lista de lo que
+tenía que guardar **a partir de lo que había en el arranque**, no de lo que se acababa de
+guardar.
+
+El efecto era invisible y grave:
+
+| Lo que hacía el usuario | Lo que veía | Lo que pasaba |
+|---|---|---|
+| Pausar el Pomodoro | `true`, sin aviso | Se guardaba la sesión |
+| Volver a empezar y pausar | `true`, sin aviso | **La segunda escritura pisaba la primera** |
+
+**Una sesión de estudio desaparecía del mapa de calor**, sin error, sin aviso y con las dos
+llamadas devolviendo `true`. Con una sola pausa por corrida de la app no se notaba; con
+dos, una se perdía.
+
+**El arreglo son dos cosas, y con las dos hace falta:**
+
+1. **Esperar a la escritura anterior de ese grupo**, para que la segunda vea lo que
+   escribió la primera.
+2. **Dejar la memoria al día cuando la escritura sale bien**, que es lo que faltaba.
+
+Y el detalle que hace que (1) no se rompa: **la cadena de escrituras no puede quedar
+rechazada**. Si una escritura falla y la promesa queda rechazada, la siguiente —y la
+siguiente a esa— **no arrancan nunca**, y un fallo del almacén deja los minutos de estudio
+bloqueados el resto de la sesión. Se encadena con `catch` vacío:
+
+```javascript
+escrituraEnCurso[nombre] = esta.then(() => {}, () => {});
+```
+
+Lo que va en la cadena es una promesa que **siempre** se cumple. El error se le avisa a
+quien la llamó, que es el único que puede hacer algo con él.
+
+**La lección, y es más general que este store**: un caché que se llena al arrancar y nunca
+se vuelve a tocar **no es un caché, es una foto**. Se usa como si estuviera al día, y
+todo lo que se escriba a partir de él va a perder lo que se haya escrito después. Es
+exactamente la clase de defecto que no aparece en los tests: cada camino individual
+funciona, y el defecto solo aparece **cuando se usan dos en la misma corrida**.
+
+## Una función que no tira esconde el error tres pasos más abajo (2026-10-05)
+
+El respaldo exportaba la lista de documentos **sin los archivos**. Todo andaba: la descarga
+funcionaba, el `JSON` era válido, no había errores en la consola. Solo se descubría cuando
+el usuario necesitaba respaldar de verdad.
+
+Causa: desde que el índice y los archivos están en almacenes distintos, el contenido de un
+documento **solo se llena cuando el usuario lo abre**. Al arrancar, todos vienen en `null`.
+El respaldo se armaba desde el índice, así que llevaba la lista sin nada detrás.
+
+Al probarlo, `separarIndice()` devolvía **`[]` con un dato perfectamente válido**. Se pasó
+media hora buscando el defecto en el módulo, en el orden de las escrituras y en la promesa
+del respaldo.
+
+**El dato de prueba no era válido.** En el test, la "materia" era **un objeto suelto donde
+se esperaba una lista**. Se sembraba envuelta y después se usaba sin envolver.
+
+Y `separarIndice()` hace `[]` con un objeto suelto **a propósito**: no lanza. Está bien que
+sea así —una función que no tira es la diferencia entre "el usuario ve un error" y "la app
+se abre"—, pero tiene un precio:
+
+> **Un `[]`, un `null` o un `undefined` inesperado en un punto medio del recorrido es el
+> dato de prueba, no el defecto.**
+
+Cada función defensiva desplaza el error un paso más adentro, y un error que viaja tres
+niveles deja de parecerse a lo que es. Un test que arma el estado mal no falla: **falla
+en el lugar más lejano del código**, que es el peor lugar para buscar.
+
+La forma de no tropezar: cuando una función pura devuelve algo vacío y no debería,
+**probá la entrada antes de suspectar de la función**. Y si devuelve vacío a propósito,
+que lo diga con un test propio, para que el próximo que lo lea no lo interprete como
+"todavía no lo implementaron".
+
+## Un camino de escritura que se saltaba la red, y un test que no lo veía (2026-10-05)
+
+Había un camino único para escribir un grupo: espera la escritura anterior, y deja la
+memoria al día cuando sale bien. **Lo usaban dos de los cuatro caminos de escritura.** Los
+otros dos lo llamaban directo, y se saltaban las dos cosas.
+
+El síntoma: un respaldo armado **en la misma sesión** salía sin lo que el usuario acababa
+de guardar. Con la memoria desactualizada, el respaldo se armaba con lo que había **al
+arrancar**.
+
+Y ningún test lo cazaba, porque el síntoma depende de una **coincidencia**: que el
+respaldo se arme en la misma sesión, y solo de un grupo.
+
+> **Cuando el síntoma depende de una coincidencia, el test de comportamiento es el
+> equivocado.** La regla que vale no es "esto pasa", sino **"un grupo se escribe por un
+> solo camino"** — y esa se puede comprobar siempre, con un test de fuente que cuente las
+> llamadas y descuente la que está dentro de la función que debe llamar directo.
+
+El test dura cuatro líneas y no se va a romper por un cambio de estilo:
+
+```javascript
+const todos = [...codigo.matchAll(/Modulo\.guardarGrupo\(/g)].length;
+assert.equal(todos, 1, 'solo puede haber una llamada, la que está dentro de escribirGrupo()');
+```
+
+## Un `DD` que dice "no se toque" deja de ser una decisión (2026-10-05)
+
+El `plan.md` decía, con letra: *"`js/logica/almacenamiento.js` **no se toca**"* — es
+lógica pura de capacidad y sus tests siguen valiendo.
+
+Se cumplió durante toda la spec. Y a la mitad ya era mentira: al irse el aviso de "casi
+lleno", `app.js` dejó de llamarlo, y el módulo entero —con sus cuarenta y pico tests—
+quedó probando lógica a la que **ningún camino de la aplicación llega**. Verde por arriba,
+muerto por debajo.
+
+Borrarlo fue lo correcto, y T10 lleva la corrección. Pero la lección no es sobre este
+módulo:
+
+> **Un DD escrito en el plan y nunca revisado deja de ser una decisión y pasa a ser una
+> costumbre.** El plan dice qué se decidió *el día que se decidió*; si el código llega a
+> otro estado, el plan está mintiendo aunque nadie lo haya tocado.
+
+Un plan que dice "no se toque" debería llevar la fecha y la condición que lo sostiene — acá
+faltaba el "mientras algo lo siga llamando"—, porque sin eso no hay forma de saber si
+todavía se sostiene.
+
+## Arreglar una sonda puede encontrar el defecto que ella no podía ver (2026-10-05)
+
+Las dos sondas de Chrome —capturar el árbol y verificar el layout— sembraban con
+`localStorage.setItem(...)`. Con la aplicación leyendo del almacén del navegador, eso ya no
+sembraba nada: el primer escenario migraba, dejaba la marca, y todos los siguientes
+encontraban la marca y leían de un almacén vacío.
+
+Los trece escenarios salían con **0 materias**, y los doce "limpios" **pasaban de mentira**:
+el aviso de datos solo aparece con datos raros, y los datos raros no llegaban.
+
+Al cambiar la siembra para que pasara por el camino de escritura de la aplicación, apareció
+**una pérdida de datos**:
+
+> En un perfil nuevo —sin nada en `localStorage`— la migración no tiene nada que copiar y
+> **no deja la marca**. Sin marca, la aplicación lee del almacén viejo, que está vacío. El
+> usuario importa un respaldo, le dicen que salió bien, recarga, y **el respaldo no está**.
+
+La razón por la que no se veía antes es la lección:
+
+> **La sonda no estaba mal. Estaba midiendo el caso fácil.** El perfil vacío es un caso que
+> la sonda anterior **no podía construir**, porque sembraba por la única puerta que no lo
+> produce.
+
+Eso es al revés de lo que se suele pensar de las sondas. No son un espejo: son el único
+lugar donde se pueden construir a propósito los estados raros. Una sonda que solo mide el
+camino feliz deja los defectos de los otros caminos sin tocar.
+
+## En una sonda, el valor se devuelve explícito (2026-10-05)
+
+Una expresión para `Runtime.evaluate` terminaba en `'listo';`, apoyándose en el valor de la
+última sentencia. Devolvió `undefined`.
+
+El error que salió fue *"la aplicación no llegó a cargar"* — que apunta a la aplicación, y
+hacia el lugar equivocado del todo. Se aisló evaluando cuatro expresiones por CDP: **las
+que tenían `return` devolvieron su valor, y la que se apoyaba en la última sentencia no.**
+
+> **En una sonda el valor se devuelve con `return` explícito.** El valor implícito de una
+> función es un supuesto sobre el evaluador, y los evaluadores no están obligados a
+> cumplirlo.
+
+Cuesta un carácter y ahorra una hora de buscar el defecto en el lugar equivocado.
+
+Las otras dos cosas que la misma sonda tuvo que aprender:
+
+- **`alert()` detiene la página.** Con `awaitPromise`, el `Runtime.evaluate` no resuelve
+  nunca y la sonda se cuelga. Hay que silenciar `alert()` y `confirm()` **antes**. No es
+  comodidad: es que la sonda no puede seguir.
+- **`indexedDB.deleteDatabase()` no sirve con la página abierta.** La base está bloqueada y
+  la llamada queda esperando un `blocked` que no llega. Para dejar todo en cero, una
+  operación de la aplicación que **reemplace** todos los grupos sirve mejor y no se cuelga.
+
+## Un helper que dos herramientas usan tiene que recibir callbacks (2026-10-05)
+
+Dos sondas de Chrome llaman al CDP distinto: una trabaja sobre el target del primer plano y
+su `enviar` toma dos argumentos; la otra se adjunta a una sesión y toma tres.
+
+El primer intento del helper compartido recibió el cliente y el `sessionId`. Falló en una de
+las dos, y **el error era "la página no cargó"** — que apunta a la aplicación y no al
+helper.
+
+> **Un helper que dos cosas usan no debe saber en qué se diferencian.** Recibe callbacks y
+> cada quien arma los suyos. Si tiene que preguntar por la firma, ya sabe demasiado de los
+> dos.
+
+Y en general: **dos copias de una siembra se desincronizan, y la que queda vieja es la que
+nadie recuerda actualizar.** Por eso vive en un archivo solo, igual que `test/dom-falso.js`.
+
+## Preguntar por el objeto equivocado rompe todo lo que lo usa (2026-10-05)
+
+**Los PDF no se podían leer.** Un PDF y un Word guardados mostraban *"A este archivo le
+falta el contenido"* —y el texto lo explicaba tan bien que el usuario podía creérselo—.
+
+La causa, en cuatro líneas:
+
+```javascript
+if (DatosLogica.documentoSinContenido(doc)) {   // ← acá se cortaba
+    mostrarDocumentoSinContenido(doc);
+    return;
+}
+contenido = await AlmacenamientoDatos.leerContenido(doc.id);   // ← nunca llegaba
+```
+
+`documentoSinContenido()` responde *"¿este objeto trae el contenido adentro?"*. Desde que
+el índice y los archivos están en almacenes distintos, **un documento del índice nunca trae
+el contenido**: el índice tiene nombre, tipo y fecha. La respuesta era siempre "no", y la
+lectura no se ejecutaba nunca.
+
+> **La pregunta útil es "¿el archivo está guardado?", y eso solo se responde preguntando al
+> almacén.** Preguntar por el objeto equivocado no da un valor equivocado: da un `true`
+> sobre una afirmación que nunca correspondió con la realidad.
+
+Y lo que lo escondía: `documentoSinContenido()` tiene una excepción para los HTML —uno
+vacío se abre, sale un iframe en blanco—, y esa excepción, escrita para un caso legítimo,
+**tapaba el bug entero para los PDF**, que son justo los que no la tienen.
+
+**La regla, para cuando algo vivo cambia de lugar:** una función que responde bien deja de
+responder bien el día que cambia el dato que mira. `documentoSinContenido()` era correcta
+mientras el contenido venía en el índice. No se rompió: **le cambiaron la pregunta debajo.**
+
+## Un test que mira el `innerHTML` de algo que se arma con `appendChild` (2026-10-05)
+
+Los tests del bug de los PDF pasaban **por la razón equivocada**: leían
+`visor.innerHTML`, y el panel de "sin contenido" se arma con `appendChild`. En el arnés,
+`innerHTML` queda en `''`, así que la comprobación era "esto no dice 'le falta el
+contenido'" sobre un string vacío. **Verdadero siempre.**
+
+Peor que no tener test: el verde tapaba el bug. Recién cuando leyeron el árbol —los hijos, de
+verdad— los dos tests dieron rojo con el defecto presente.
+
+> **Si el código dibuja con `appendChild`, el test tiene que leer `hijos`.** Y si un test
+> pasa, conviene una vez comprobar que **falla** cuando el código está roto: un verde que no
+> se ha visto caer nunca es una hipótesis, no una prueba.
+
+## Un simulador que acepta lo que el navegador rechaza no prueba el camino del error (2026-10-05)
+
+Falta de `atob` en el arnés de `test/dom-falso.js`. La app lo necesitaba para pasar lo que
+está guardado —el archivo codificado en base64 dentro de una URL de datos— a los bytes que
+pdf.js y mammoth piden.
+
+Se agregan al arnés, **no a la aplicación**: `atob` es un global del navegador, y escribir un
+descodificador de base64 en `app.js` solo para que un test pueda correrla sería lo contrario
+de lo que dice el proyecto.
+
+La primera versión de ese `atob` la escribió a mano, **y estaba mal**: en vez de fallar con
+una cadena que no es base64, tiraba los caracteres raros y devolvía bytes. `"esto no es una
+URL"` salía como nueve bytes de basura.
+
+Eso importa porque **un simulador que acepta lo que el navegador rechaza no puede probar el
+camino del error**:
+
+> Si el arnés es más permisivo que la realidad, todo test que espere un fallo **pasa** por la
+> razón equivocada, y el test del camino del error no existe.
+
+El `atob` real **lanza** `InvalidCharacterError`. El del arnés ahora también, y delega la
+descodificación en `Buffer`, que es exacta.
+
+## Un fixture que no parece un archivo real esconde los defectos que dependen del archivo (2026-10-05)
+
+Un test usaba el texto `'BASE64-DEL-PDF'` como si fuera el contenido de un PDF. No es base64:
+tiene letras, guiones y un guion medio.
+
+Pasó **muchos tests** sin que se notara, porque en ese momento nada lo descodificaba. Cuando
+apareció `bytesDeDocumento()` —que es lo correcto— el fixture roto saltó, y el fallo parecía
+un defecto nuevo de la aplicación.
+
+> **Un fixture inventado esconde todo defecto que dependa de que el dato sea real.** Un
+> nombre, una fecha o un archivo de prueba tienen que tener **la forma del dato real**, no una
+> forma que el código todavía no mira. Si el código no los lee todavía, el fixture no importa
+> —hasta que empieza a leerlos.
+
+Y el detalle que lo destapó: el `AssertionError` showed el valor real y el esperado, y la
+diferencia —`data:application/pdf;base64,JVBER…` contra `JVBER…`— era exactamente la
+pregunta del test mal escrita, no un defecto de la app.
+
+## Dos caminos que hacen lo mismo por accidente (2026-10-05)
+
+El PDF se pasaba a pdf.js **tal cual estaba guardado**: el texto `"data:application/pdf;base64,JVBER…"`.
+Pero `getDocument({data: …})` quiere **bytes**. Tomaba los caracteres de esa cadena como si
+fueran el archivo, y no abría.
+
+El Word pasaba por `fetch(contenido)`, y `fetch` **sí** descodifica una URL de datos. Por eso
+el Word funcionaba: **no porque estuviera bien escrito, sino porque pasó por una función del
+navegador que hacía el trabajo sin que nadie lo pidiera.**
+
+Y tenía un coste: `fetch` de una URL de datos es una petición de red. El proyecto no manda
+datos a internet, pero **depender de una petición para abrir un archivo que ya está en tu
+computadora** es una dependencia que no hace falta: sin internet, un `.docx` guardado no
+abría.
+
+> **Cuando dos caminos hacen lo mismo y uno funciona, el que funciona puede estar tapando un
+> error del otro.** Arreglados: los dos usan ahora `bytesDeDocumento()`, un solo lugar, y no
+> hay ninguna petición de red para abrir un archivo local.
+
+## El `catch` que no ve lo que pasa adentro de la librería (2026-10-05)
+
+`cargarPDF()` tenía su `try`/`catch`, así que parecía que el error de un PDF roto se
+avisaría. No: el error ocurre **adentro de pdf.js**, en otra promesa. El `catch` de afuera no
+lo ve, y el PDF no abría sin que nadie supiera por qué.
+
+> **Un `try` alrededor de una llamada a una librería no cubre los errores de la librería.** Si
+> el error posible está adentro, el aviso tiene que salir de adentro.
+
+## Aceptar un formato que después no se puede abrir (2026-10-05)
+
+El selector de archivos ofrecía `.docx` **y `.doc`**, y `crearDocumento()` leía los dos como
+tipo `'word'`.
+
+Pero `mammoth` —la librería que convierte Word a HTML— **solo entiende `.docx`**. `.doc` es el
+formato binario de Word 97-2003, que no es un zip.
+
+Así que un `.doc` pasaba por todo el camino: se subía, se guardaba, aparecía en el menú con su
+nombre, y **al abrirlo salía "Error al convertir"**. La aplicación había aceptado algo que no
+puede hacer, y el usuario lo descubría recién cuando lo quería usar, con el archivo ya
+guardado.
+
+> **Aceptar un formato que después no se puede abrir es peor que no ofrecerlo**: sin la
+> garantía, el usuario confía; con la garantía, tiene que buscar la causa. Y esa causa es
+> "la app lo aceptó", que es lo último que debería estar pasando.
+
+Y un detalle que suele pasarse por alto:
+
+> **`accept` del `input type="file"` es una sugerencia del navegador, no una regla.** Con
+> `accept=".pdf"` se puede elegir cualquier archivo igual, y también se puede arrastrar sobre
+> la ventana. Quitar `.doc` del `accept` **no** impide subirlo.
+
+Por eso la regla está en `crearDocumento()`, que devuelve `null` para lo que no sabe abrir, y
+en un aviso que dice **qué formatos sí y cómo resolverlo**:
+
+> Un aviso que solo dice "no se pudo" deja al usuario sin salida. Uno que no dice **qué formatos
+> son válidos** lo deja adivinando.
+
+Y se guarda lo que se pudo, no todo o nada: si el usuario sube un `.docx` y un `.txt`, **el
+`.docx` queda guardado** y el aviso nombra solo al `.txt`.
+
+## Un global del navegador que es un stub deja un camino entero sin probar (2026-10-05)
+
+`FileReader` estaba en el arnés como `FileReader: function () {}`. Un stub que no hace nada.
+
+Eso dejaba **todo el camino de subida de archivos** sin poder probarse con `node --test`:
+`crearDocumento()` llegaba a `readAsDataURL` y reventaba con *"readAsDataURL is not a
+function"*.
+
+> **Un stub no es un simulador.** Un stub hace que el código **parezca** no ejercitado: el
+> camino existe, el test lo llama, y revienta con un `TypeError` que dice "falta un método",
+> no "el arnés no lo tiene". Es el mismo error que daría un defecto real, y por eso hace
+> perder el tiempo en el lugar equivocado.
+
+Los dos que faltaban son del mismo tipo, y los dos aparecieron juntos: `atob` y `FileReader`.
+Son **globales del navegador** que la aplicación usa, y por eso van en el arnés: lo contrario
+sería escribir en `app.js` un descodificador de base64 y un lector de archivos **solo para
+que un test pueda correrla**.
+
+El mismo día, en `MEMORY.md` ya estaba anotado *"un mock que miente hace que un camino nunca se
+pruebe"*. Este es el caso fuerte: **no mintiendo, sino no sirviendo para nada.**
+
+## Un test que busca una palabra en un archivo de mil líneas no comprueba nada (2026-10-05)
+
+Para comprobar que el aviso de archivos no aceptados decía qué formatos sí y cómo resolverlo,
+el primer test buscaba las palabras `".docx"` y `"guardá"` en **todo** `app.js`.
+
+Dio verde **sin que existiera ningún aviso**: las dos palabras ya estaban en un comentario.
+
+> Un test que busca un texto en un archivo largo comprueba que **el texto exista**, no que diga
+> lo que tiene que decir. Y un comentario es texto.
+
+La versión que sí sirve saca **el cuerpo de la función del aviso** y le exige que mencione el
+`.docx`, que mencione los `.doc` —los que se están rechazando— y que diga cómo resolverlo.
+
+## "Dejalo así" también es una decisión, y hay que escribirla (2026-10-05)
+
+Pregunté si había que bajar `mammoth` y `pdf.js` al proyecto para que los PDF y los Word
+abrieran sin internet. La respuesta fue **"dejalo así"**.
+
+Dos cosas hay que hacer con esa respuesta, y la segunda es la que se olvida:
+
+1. **No hacer nada.** Y eso ya es una decisión, con su motivo.
+2. **Escribirla**, porque si no dentro de tres meses vuelve a aparecer la misma pregunta y
+   alguien —o el mismo— la vuelve a investigar desde cero.
+
+Y al escribirla apareció algo mejor: la constitución decía, del principio 5, *"Nunca enviar
+datos a internet — **el proyecto funciona entero sin red**"*.
+
+**Esa segunda mitad era falsa.** El proyecto carga dos librerías de un CDN, y el PDF además
+baja un *worker* desde ahí. **Sin internet no abre ningún PDF ni ningún Word**, aunque el
+archivo esté guardado.
+
+> **Una regla puede ser cierta y su justificación, falsa.** "Nunca se envían datos a
+> internet" se cumple. "Funciona entero sin red" no, y estaba pegado a la misma regla como si
+> fuera lo mismo. Son dos afirmaciones: la primera es una promesa de privacidad y la segunda
+> **Pegadas, la segunda arrastra a la primera.**
+
+La aclaración que quedó escrita dice qué funciona sin red —todo menos PDF y Word, y los HTML
+sí— y por qué se decidió no bajarlas.
+
+> Cuando alguien dice **"dejalo así"**, la respuesta no es "no hago nada": es **"no hago nada
+> y dejo escrito por qué"**. Una decisión sin motivo escrito es una decisión que se vuelve a
+> preguntar.
+
 ## Trampa: `node --test` ejecuta todo lo que hay en `test/`
 
 Un archivo `.js` dentro de un directorio llamado `test` **se ejecuta** en

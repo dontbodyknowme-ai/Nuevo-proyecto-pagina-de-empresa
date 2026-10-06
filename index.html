@@ -116,7 +116,7 @@
     </div>
 
     <!-- Input de archivos oculto -->
-    <input type="file" id="inputArchivo" accept=".html,.htm,.pdf,.docx,.doc" multiple style="display:none">
+    <input type="file" id="inputArchivo" accept=".html,.htm,.pdf,.docx" multiple style="display:none">
     <input type="file" id="inputImportar" accept=".json" style="display:none">
 
     <!-- Modal Calendario -->
@@ -196,9 +196,9 @@
          No se usa type="module" porque el proyecto se abre con file://
          y los módulos ES están bloqueados por CORS en ese caso. -->
     <script src="js/logica/mapa-calor.js"></script>
-    <script src="js/logica/almacenamiento.js"></script>
     <script src="js/logica/consentimiento.js"></script>
     <script src="js/datos/secciones.js"></script>
+    <script src="js/datos/almacenamiento.js"></script>
     <!-- layout.js va antes de interfaz/visibilidad.js: la lógica decide,
          la interfaz aplica. -->
     <script src="js/logica/layout.js"></script>

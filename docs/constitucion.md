@@ -15,7 +15,7 @@ Un cuaderno virtual para organizar apuntes:
 - Tiene **calendario** con anotaciones de parciales y entregas
 - Todo se guarda **en tu computadora**, sin internet y sin cuentas
 
-No es una app para publicar. Es una herramienta tuya. Eso freedom es lo que define cada decisión del proyecto.
+No es una app para publicar. Es una herramienta tuya. Esa libertad es lo que define cada decisión del proyecto.
 
 ---
 
@@ -67,7 +67,7 @@ Esa lista tiene que coincidir con el árbol de `AGENTS.md`.
 
 Una función calcula datos o cambia estado. Dibujar es **otra** función.
 
-**Por qué:** cuando la lógica y el dibujo están mezclados, cambiar el diseño rompe la lógica y viceversa. Son dos Battlefield distintos.
+**Por qué:** cuando la lógica y el dibujo están mezclados, cambiar el diseño rompe la lógica y viceversa. Son dos caminos distintos.
 
 **Se verifica:** todo texto que venga del usuario entra al DOM **solo** con `textContent` o `createElement`.
 
@@ -133,7 +133,23 @@ Se guardan solo en tu navegador y salen solo cuando vos lo exportás.
 **Las tres reglas:**
 
 1. **Nunca** `innerHTML` con texto del usuario (el XSS que encontramos)
-2. **Nunca** enviar datos a internet — el proyecto funciona entero sin red
+2. **Nunca** enviar datos a internet — tus apuntes no salen de tu computadora
+
+   > **Aclaración, agregada el 2026-10-05.** La primera mitad se cumple siempre. La
+   > segunda —"el proyecto funciona entero sin red"— **no es cierta**, y conviene que lo sepas:
+   > `mammoth` (para ver Word) y `pdf.js` (para ver PDF) se cargan desde `cdnjs.cloudflare.com`,
+   > y el PDF además baja un *worker* desde ahí. **Sin internet no se abre ningún PDF ni
+   > ningún Word**, aunque el archivo esté guardado en tu máquina.
+   >
+   > Lo que sí funciona sin red: todo lo demás —las materias, el calendario, el Pomodoro, el
+   > mapa de calor, guardar, exportar, importar— y leer los archivos **HTML**, que no
+   > necesitan ninguna librería.
+   >
+   > **Decidido el 2026-10-05: se deja así.** Se evaluó bajar las dos librerías al proyecto y
+   > no se hizo, a propósito: serían alrededor de un megabyte de código minificado de
+   > terceros dentro de un proyecto que estás aprendiendo, y **seguirían sin resolver el
+   > worker del PDF**, que es una petición a la red. La decisión real no era "¿las bajamos?",
+   > sino "¿querés que funcione sin internet?", y la respuesta fue que no.
 3. **Siempre** confirmar antes de borrar: materia, documento o importación
 
 **Y siempre tenés salida:** exportá antes de tocar algo importante.
@@ -142,10 +158,20 @@ Se guardan solo en tu navegador y salen solo cuando vos lo exportás.
 # Si algo sale mal, tu respaldo está en el JSON descargado
 ```
 
-> **Límite que tenés que respetar:** el almacenamiento del navegador tiene un tope de ~5 MB. Los PDFs se guardan en base64, que los agranda un 33 %.
+> **Regla:** nunca se pierde nada en silencio. Si no se pudo guardar, el sistema **te avisa**,
+> te dice que lo que ya tenías sigue ahí, y te ofrece exportar. El aviso **no dice por qué**
+> no pudo guardar, porque no lo sabe: lo que falló puede ser la cuota del navegador, un disco
+> lleno, una pestaña bloqueada o un permiso, y son cosas distintas. **Un aviso que inventa la
+> causa manda al usuario a buscar un problema que puede no tener.**
 >
-> **Regla:** nunca se pierde nada en silencio. Si el espacio se está agotando, el sistema **te avisa** y te ofrece exportar para liberar lugar antes de seguir subiendo.
-> **El fallo silencioso ya no está permitido.** Es una deuda histórica, no un comportamiento aceptable.
+> **El fallo silencioso ya no está permitido.** Es una deuda histórica, no un comportamiento
+> aceptable.
+>
+> *Nota:* este texto antes decía que el almacenamiento tiene un tope de ~5 MB. **Ya no hay ese
+> muro**: el cuaderno pasó a un almacén que separa cada dato, así que no hay un solo texto que
+> se llene entero. Por eso el aviso de "casi lleno" y su umbral del 95 % **se borraron** el
+> 2026-10-05. Lo que **sigue siendo cierto** es que cada PDF ocupa un 33 % más de lo que
+> ocupa, porque se guarda en base64: eso hay que tenerlo presente con los documentos grandes.
 
 ---
 
@@ -155,7 +181,11 @@ Comentarios, nombres de variables y textos de la interfaz. En español. UTF-8 si
 
 **Por qué:** es tu proyecto y lo leés todos los días. Que se entienda a la primera es lo mínimo.
 
-**Se verifica:** los archivos tienen que estar en UTF-8 sin BOM. Si se rompe, aparece `Anatom��a` en vez de `Anatomía`.
+**Se verifica:** los archivos tienen que estar en UTF-8 sin BOM. Si se rompe, el acento se convierte en un signo de interrogación: `Anatom?a` en vez de `Anatomía`.
+
+> Esta misma línea, en su versión anterior, tenía **dos caracteres de reemplazo dentro**,
+> para ilustrar la corrupción: el documento que la describía **la tenía**. Un archivo con el
+> síntoma adentro no puede afirmar que no lo tiene.
 
 ```powershell
 # Debe devolver 0 para cada archivo
@@ -173,14 +203,28 @@ Estos principios son el destino. El proyecto **todavía no los cumple todos** �
 
 | Principio | Estado actual |
 |-----------|---------------|
-| 1 · Stack simple | ✅ Cumplido — sin `package.json`, sin `node_modules` |
+| 1 · Stack simple | ✅ Cumplido — sin `package.json`, sin `node_modules`. El almacén nuevo es una capacidad del navegador, no un paquete |
 | 2 · Documentado | ✅ Cumplido — existe `docs/constitucion.md`, `specs/` y `test/` |
-| 3 · Lógica / DOM | ⚠️ **Mejorado**: la lógica nueva vive en `js/logica/` separada del DOM. `app.js` sigue mezclando, pendiente de refactorizar |
-| 4 · Probar es mirar | ✅ Dos caminos funcionando: 91 tests con Node, chrome-devtools para la interfaz |
-| 5 · Datos seguros | ✅ El aviso de almacenamiento y la reversión **ya están implementados** |
+| 3 · Lógica / DOM | ⚠️ **Mejorado**: la lógica vive en `js/logica/` y `js/datos/`, separada del DOM. `app.js` sigue mezclando lógica y dibujo, y sigue siendo grande |
+| 4 · Probar es mirar | ✅ Dos caminos funcionando: **493 tests** con Node, `chrome-devtools` para la interfaz, y dos sondas que abren Chrome solas |
+| 5 · Datos seguros | ✅ La **reversión** y los avisos están implementados en los cuatro caminos de escritura. El aviso de espacio **ya no existe**: ver el principio 5 |
 | 6 · Español UTF-8 | ✅ Cumplido |
 
+Sobre la fila 3: `app.js` ya no tiene lo peor. El almacenamiento —abrir, migrar, leer,
+escribir— salió a `js/datos/almacenamiento.js`, y las reglas de las secciones de estudio a
+`js/datos/secciones.js`. **Lo que queda dentro es sobre todo dibujo y conexión de eventos.**
+Aun así mezcla cálculo y dibujo, y por eso sigue en amarillo.
+
 Los que están en amarillo o rojo **no se arreglan de una**. Se mejoran de a poco, sin romper lo que ya funciona.
+
+> **Una redacción que engaña.** La versión anterior decía que `app.js` estaba *"pendiente de
+> refactorizar"*, como si hubiera un plan esperando. No lo hay, y la especificación 006
+> decidió **explícitamente no seguir achicándolo**: lo que quedaría por mover son funciones
+> cuyo comportamiento —los manejadores de clic— no se puede comprobar hoy, porque el
+> comparador de árboles mira el HTML y los manejadores no están en el HTML.
+>
+> Un refactor que solo se puede comprobar abriendo la página a ojo no es un refactor, es un
+> acto de fe. Y **el archivo anda**: no tiene un defecto, es grande. Grande no es roto.
 
 ---
 
@@ -196,8 +240,10 @@ Porque estás empezando, estas son las palabras que vas a ver.
 | **DOM** | La estructura de la página una vez que el navegador la interpretó. "Los elementos de la página". |
 | **`innerHTML`** | Pegar HTML dentro de un elemento. **Peligroso** con datos del usuario. |
 | **`textContent`** | Poner texto plano dentro de un elemento. Siempre seguro. |
-| **`localStorage`** | Memoria del navegador. Se borra si limpiás los datos del navegador. |
+| **`localStorage`** | Memoria del navegador, donde todo es un texto con clave. **Donde vivía el cuaderno antes de la especificación 008.** Ahora solo se usa para leer los datos viejos y migrarlos, y **nunca se borra**: es la red, por si algo sale mal |
+| **IndexedDB** | El almacén del navegador que **separa cada dato**. Es donde vive el cuaderno desde la especificación 008: el índice por un lado, cada archivo por otro. No es un paquete ni una instalación: es una capacidad del navegador |
 | **`base64`** | Forma de guardar un archivo binario como texto. Agranda el tamaño un 33 %. |
+| **Respaldo** | El archivo JSON que exportás. **Desde la especificación 008 incluye los cuatro grupos** —materias, minutos antiguos, historial de estudio y anotaciones—, no solo las materias |
 | **XSS** | Un ataque donde un texto malicioso se ejecuta como código. |
 | **CDN** | Servidor que te presta una librería. `cdnjs.cloudflare.com` es uno. |
 | **iframe** | Una página dentro de otra. Acá la usamos para mostrar tus documentos. |

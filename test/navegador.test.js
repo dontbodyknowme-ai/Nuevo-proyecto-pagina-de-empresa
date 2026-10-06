@@ -117,8 +117,8 @@ test('navegador · no queda un número viejo escrito en un comentario', () => {
 // por eso necesita el test de al lado: una lista escrita a mano se queda vieja
 // sola.
 const GLOBALES_VIGILADOS = [
-    'MapaCalorLogica', 'AlmacenamientoLogica',
-    'ConsentimientoLogica', 'SeccionesDatos',
+    'MapaCalorLogica',
+    'ConsentimientoLogica', 'SeccionesDatos', 'AlmacenamientoDatos',
     'MapaCalorInterfaz', 'LayoutLogica', 'VisibilidadInterfaz',
     'VisorInterfaz', 'FechasLogica', 'AnotacionesLogica',
     'CalendarioLogica',
@@ -184,336 +184,140 @@ test('navegador · inicio-calendario puede leer los minutos por día', () => {
     );
 });
 
-// ---------- RF-3 · El almacenamiento roto no puede cortar la app ----------
-//
-// Estos tests van acá, y no en un archivo aparte, porque el arnés que simula el
-// navegador ya está en este archivo. Y porque esta clase de defecto —una
-// excepción que sale de la app en el camino real— es exactamente la que
-// `navegador.test.js` existe para cazar.
-//
-// Contexto: `guardarDatos()` tenía `LogicaCapacidad.debeRevertir(error)`, y ese
-// identificador no existe en ninguna parte del proyecto. Cuando `setItem` fallaba
-// —por cuota, por ejemplo— esa línea tiraba `ReferenceError` y la excepción salía
-// de `guardarDatos()`, cortando a quien la había llamado.
-//
-// Lo que pasaba en la app: al borrar una materia, la materia se quitaba de la
-// memoria, `guardarDatos()` tiraba, `construirArbol()` nunca corría. El nodo se
-// quedaba en pantalla y el menú mostraba algo que ya no estaba guardado.
+// ---------- RF-4 · Una lectura que no se puede interpretar no tumba la app ----------
 
-const MATERIAS_SEMBRADAS = JSON.stringify([
-    { id: 'm1', nombre: 'Matemáticas', documentos: [] }
-]);
-
-/** Carga la app con datos y devuelve el contexto listo para romper el almacenamiento. */
-function appConDatos() {
-    return cargarComoNavegador({ cuadernoVirtual: MATERIAS_SEMBRADAS }).contexto;
-}
-
-/** Hace que un método del almacenamiento falle, y lo devuelve para restaurarlo. */
-
-test('navegador · guardarDatos está en la API para poder probarla', () => {
-    // Sin esto los tests de abajo no podrían ni intentarlo. Se publica por el
-    // mismo motivo que minutosDeEstudioPorDia: una función que hay que poder
-    // verificar tiene que ser alcanzable desde afuera del IIFE.
-    const contexto = appConDatos();
-    assert.equal(
-        typeof contexto.CuadernoVirtual?.guardarDatos, 'function',
-        'app.js debe publicar guardarDatos en window.CuadernoVirtual para que se '
-        + 'pueda probar con el almacenamiento roto'
-    );
-});
-
-test('navegador · si falla setItem, guardarDatos no lanza', () => {
-    const contexto = appConDatos();
-    const restaurar = romper(contexto, 'setItem', 'cuota excedida');
-
-    let resultado;
-    try {
-        assert.doesNotThrow(() => { resultado = contexto.CuadernoVirtual.guardarDatos(); },
-            'una excepción dentro del catch no puede salir de guardarDatos');
-    } finally {
-        restaurar();
-    }
-
-    assert.equal(resultado, false, 'y tiene que avisar que no pudo guardar');
-});
-
-test('navegador · si falla setItem, los datos anteriores siguen intactos', () => {
-    const contexto = appConDatos();
-    const restaurar = romper(contexto, 'setItem', 'cuota excedida');
-
-    try {
-        contexto.CuadernoVirtual.guardarDatos();
-    } finally {
-        restaurar();
-    }
-
-    assert.equal(
-        contexto.localStorage.getItem('cuadernoVirtual'),
-        MATERIAS_SEMBRADAS,
-        'los datos que ya estaban tienen que seguir ahí, byte por byte'
-    );
-});
-
-test('navegador · si falla setItem y no había datos, no queda nada a medias', () => {
-    // Distinto del anterior: sin datos previos, el camino de reversión es
-    // removeItem, no setItem. Los dos tienen que funcionar.
-    const contexto = appConDatos();
-    contexto.localStorage.removeItem('cuadernoVirtual');
-
-    const restaurar = romper(contexto, 'setItem', 'cuota excedida');
-    try {
-        contexto.CuadernoVirtual.guardarDatos();
-    } finally {
-        restaurar();
-    }
-
-    assert.equal(contexto.localStorage.getItem('cuadernoVirtual'), null,
-        'no puede quedar un escritura a medias');
-});
-
-test('navegador · si falla getItem, no se escribe nada', () => {
-    // `getItem` para hacer la copia de seguridad está FUERA del try hoy.
-    // Algunos navegadores en modo privado lanzan al leer.
+test('navegador · unos minutos heredados que no son JSON no tumban la aplicación', () => {
+    // **Este test fallaba antes de que nada se tocara**, y esa es la prueba de que
+    // el defecto existe: `js/app.js` leía `pomodoroSesiones` con un `JSON.parse` en
+    // **código de nivel superior**, sin `try`. Con un valor guardado que no es un
+    // texto válido, el `JSON.parse` tiraba y **la página entera no abría**: sin
+    // cartel, sin aviso, sin cuaderno.
     //
-    // Lo importante no es solo que no lance: es que NO ESCRIBA. Parece lo
-    // contrario —"si no sé qué había, escribo igual"— pero el camino de
-    // reversión usa `null` para significar "no había datos". Confundir "no
-    // había" con "no pude leer" haría que un fallo de escritura **borrara** lo
-    // que el usuario tenía. No escribir nunca es menos malo.
-    const contexto = appConDatos();
-    const restaurar = romper(contexto, 'getItem', 'lectura bloqueada');
+    // No es un dato que falta. Es la aplicación.
+    const { errores } = cargarComoNavegador({ pomodoroSesiones: 'esto no es un JSON' });
 
-    let resultado;
-    try {
-        assert.doesNotThrow(() => { resultado = contexto.CuadernoVirtual.guardarDatos(); },
-            'leer el almacenamiento anterior no puede romper el guardado');
-    } finally {
-        restaurar();
-    }
+    const delArranque = errores.filter(mensaje => /JSON|token|Unexpected/i.test(mensaje));
 
-    assert.equal(resultado, false, 'tiene que decir que no pudo guardar');
-    assert.equal(
-        contexto.localStorage.getItem('cuadernoVirtual'),
-        MATERIAS_SEMBRADAS,
-        'sin copia del anterior no se puede revertir con seguridad, así que no se escribe'
-    );
-});
-
-test('navegador · si falla la reversión, guardarDatos no lanza igual', () => {
-    // El peor caso: no se puede escribir ni para guardar ni para volver atrás.
-    const contexto = appConDatos();
-    const restaurarSet = romper(contexto, 'setItem', 'no se puede escribir');
-
-    try {
-        assert.doesNotThrow(
-            () => contexto.CuadernoVirtual.guardarDatos(),
-            'cuando no se puede ni escribir ni revertir, guardarDatos tiene que '
-            + 'devolver false y seguir'
-        );
-    } finally {
-        restaurarSet();
-    }
-});
-
-test('navegador · con el almacenamiento sano, guardarDatos no cambia nada', () => {
-    // El camino normal no puede haber sido roto por los arreglos anteriores.
-    const contexto = appConDatos();
-
-    assert.equal(contexto.CuadernoVirtual.guardarDatos(), true);
-
-    const guardado = JSON.parse(contexto.localStorage.getItem('cuadernoVirtual'));
-    assert.equal(guardado.length, 1);
-    assert.equal(guardado[0].nombre, 'Matemáticas');
-});
-
-test('navegador · guardarDatos aguanta que no haya datos guardados', () => {
-    const contexto = appConDatos();
-    contexto.localStorage.removeItem('cuadernoVirtual');
-
-    assert.equal(contexto.CuadernoVirtual.guardarDatos(), true);
-});
-
-// ---------- RF-11 · Con el almacenamiento lleno no se escribe nada ----------
-
-// `guardarDatos()` mide lo que ya ocupa el almacenamiento y, si la operación no
-// entra, avisa y devuelve `false` **antes** de llamar a `setItem`. El bloqueo ya
-// existe.
-//
-// Lo que faltaba era que los llamadores lo obedecieran: los cinco que cambian
-// datos mutaban el arreglo y seguían dibujando, sin mirar el retorno. Con el
-// almacenamiento lleno, una materia nueva o un archivo subido se veían en
-// pantalla y no existían: desaparecían al recargar.
-
-test('navegador · con el almacenamiento lleno no se escribe', () => {
-    // Sembrar casi 5 MB hace que `guardarDatos()` mida que no entra.
-    const enorme = 'x'.repeat(5 * 1024 * 1024);
-    const { contexto } = cargarComoNavegador({
-        cuadernoVirtual: MATERIAS_SEMBRADAS,
-        loQueOcupaTodoElEspacio: enorme
-    });
-
-    const antes = contexto.localStorage.getItem('cuadernoVirtual');
-
-    assert.equal(contexto.CuadernoVirtual.guardarDatos(), false,
-        'tiene que decir que no pudo guardar');
-
-    assert.equal(contexto.localStorage.getItem('cuadernoVirtual'), antes,
-        'lo que estaba guardado no puede cambiar');
-});
-
-test('navegador · con el almacenamiento lleno, el cambio se deshace', () => {
-    const { contexto } = cargarComoNavegador({
-        cuadernoVirtual: MATERIAS_SEMBRADAS,
-        loQueOcupaTodoElEspacio: 'x'.repeat(5 * 1024 * 1024)
-    });
-
-    const ok = contexto.CuadernoVirtual.guardarRevirtiendoSiFalla([
-        { id: 'nueva', nombre: 'No deberia existir', documentos: [] }
-    ]);
-
-    assert.equal(ok, false);
-    assert.equal(contexto.localStorage.getItem('cuadernoVirtual'), MATERIAS_SEMBRADAS);
-
-    // Y con espacio otra vez, tampoco quedó en memoria
-    contexto.localStorage.removeItem('loQueOcupaTodoElEspacio');
-    contexto.CuadernoVirtual.guardarDatos();
-    const guardado = JSON.parse(contexto.localStorage.getItem('cuadernoVirtual'));
-    assert.deepEqual(guardado.map(m => m.nombre), ['Matemáticas']);
-});
-
-test('navegador · liberado el espacio, se puede volver a escribir', () => {
-    const { contexto } = cargarComoNavegador({
-        cuadernoVirtual: MATERIAS_SEMBRADAS,
-        loQueOcupaTodoElEspacio: 'x'.repeat(5 * 1024 * 1024)
-    });
-
-    assert.equal(contexto.CuadernoVirtual.guardarDatos(), false, 'bloqueado');
-
-    // El usuario exporta y libera espacio
-    contexto.localStorage.removeItem('loQueOcupaTodoElEspacio');
-
-    assert.equal(contexto.CuadernoVirtual.guardarDatos(), true,
-        'con espacio libre tiene que volver a andar');
-});
-
-// ---------- Que los que cambian datos obedezcan el bloqueo ----------
-//
-// Estos son tests de fuente. El DOM falso de este archivo no ejecuta el
-// manejador de un botón real, así que no se puede comprobar por comportamiento
-// qué pasa después de un click. Lo que sí se puede fijar es que el código use
-// la función que deshace el cambio, y no la que solo avisa.
-
-const CODIGO_APP = fs.readFileSync(path.join(RAIZ, 'js', 'app.js'), 'utf8');
-
-test('navegador · los que cambian datos usan la versión que deshace', () => {
-    // Cuántas veces se llama a guardarDatos() "pelada", sin la protección.
-    const desnudos = CODIGO_APP.match(/(?<![a-zA-Z0-9_])guardarDatos\(\)\s*;/g) || [];
-
-    assert.equal(
-        desnudos.length, 0,
-        `quedan ${desnudos.length} llamadas a guardarDatos() que no miran el retorno. `
-        + 'Toda llamada suelta puede dejar la pantalla mintiendo. Ver RF-11.'
-    );
-});
-
-test('navegador · las que sí mudan datos van por guardarRevirtiendoSiFalla', () => {
-    const usos = (CODIGO_APP.match(/guardarRevirtiendoSiFalla\(/g) || []).length;
-
-    // Los cinco que cambian datos: crear materia, subir por botón, subir por
-    // arrastre, renombrar, reordenar. Más los tres de T1.
-    assert.ok(usos >= 8,
-        `se usa ${usos} veces; se esperaba al menos 8 (cinco de T4 y tres de T1)`);
-});
-//
-// Antes de esto: `eliminarMateria()` saca la materia del arreglo en memoria,
-// llama a `guardarDatos()`, y **no mira el retorno**. Si el guardado falla, la
-// pantalla se redibuja igual y muestra un borrado que no se guardó. Recargar la
-// página lo trae de vuelta.
-//
-// O sea: la app le dice al usuario que borró algo, y no lo borró.
-//
-// Lo que se arregla: que el cambio en memoria se deshaga cuando el guardado
-// falla, y avise.
-
-test('navegador · guardarRevirtiendoSiFalla está en la API', () => {
-    const contexto = appConDatos();
-    assert.equal(
-        typeof contexto.CuadernoVirtual?.guardarRevirtiendoSiFalla, 'function',
-        'tiene que estar en la API para poder probar que deshace el cambio'
-    );
-});
-
-test('navegador · si el guardado anda, el cambio se aplica y se guarda', () => {
-    const contexto = appConDatos();
-
-    const ok = contexto.CuadernoVirtual.guardarRevirtiendoSiFalla([
-        { id: 'm9', nombre: 'Nueva', documentos: [] }
-    ]);
-
-    assert.equal(ok, true);
-    const guardado = JSON.parse(contexto.localStorage.getItem('cuadernoVirtual'));
-    assert.equal(guardado.length, 1);
-    assert.equal(guardado[0].nombre, 'Nueva', 'el cambio nuevo es el que se guarda');
-});
-
-test('navegador · si el guardado falla, el cambio se deshace', () => {
-    const contexto = appConDatos();
-    const restaurar = romper(contexto, 'setItem', 'cuota excedida');
-
-    let ok;
-    try {
-        ok = contexto.CuadernoVirtual.guardarRevirtiendoSiFalla([
-            { id: 'm9', nombre: 'Esta no deberia quedar', documentos: [] }
-        ]);
-    } finally {
-        restaurar();
-    }
-
-    assert.equal(ok, false, 'tiene que avisar que no pudo guardar');
-
-    // Lo importante: lo que estaba antes tiene que volver a estar en memoria.
-    // Se comprueba con un guardado que sí funciona.
-    assert.equal(contexto.CuadernoVirtual.guardarDatos(), true);
-    const guardado = JSON.parse(contexto.localStorage.getItem('cuadernoVirtual'));
     assert.deepEqual(
-        guardado.map(m => m.nombre),
-        ['Matemáticas'],
-        'el cambio que no se pudo guardar no puede quedar en memoria'
+        delArranque, [],
+        'la aplicación no abrió porque una lectura sin proteger tiró:\n'
+        + delArranque.join('\n')
     );
 });
 
-test('navegador · si el guardado falla dos veces, tampoco acumula cambios', () => {
-    const contexto = appConDatos();
-    const restaurar = romper(contexto, 'setItem', 'cuota excedida');
+test('navegador · el cuaderno abre igual con unos minutos heredados rotos', () => {
+    // Lo que tiene que pasar ahora: la app abre, avisa por el cartel de arriba, y
+    // **no borra nada**. Borrar sería peor que no avisar: el usuario perdería su
+    // historial sin enterarse.
+    const { contexto } = cargarComoNavegador({ pomodoroSesiones: 'esto no es un JSON' });
 
-    try {
-        contexto.CuadernoVirtual.guardarRevirtiendoSiFalla([{ id: 'x', nombre: 'A', documentos: [] }]);
-        contexto.CuadernoVirtual.guardarRevirtiendoSiFalla([{ id: 'y', nombre: 'B', documentos: [] }]);
-    } finally {
-        restaurar();
-    }
+    // Si la lectura hubiera tirado, la API no estaría publicada.
+    assert.equal(
+        typeof contexto.CuadernoVirtual?.minutosDeEstudioPorDia, 'function',
+        'la app no llegó a publicarse: la lectura sin proteger cortó el arranque'
+    );
 
-    contexto.CuadernoVirtual.guardarDatos();
-    const guardado = JSON.parse(contexto.localStorage.getItem('cuadernoVirtual'));
-    assert.deepEqual(guardado.map(m => m.nombre), ['Matemáticas']);
+    // Y no se perdió nada: la clave sigue ahí, con el mismo valor.
+    assert.equal(
+        contexto.localStorage.getItem('pomodoroSesiones'), 'esto no es un JSON',
+        'la lectura borró lo que estaba guardado. Un dato roto se '
+        + 'completa y se avisa; nunca se descarta.'
+    );
 });
 
-test('navegador · deshacer no borra la copia de seguridad del almacenamiento', () => {
-    // Revertir es solo cambiar lo que hay en memoria. Lo que está guardado en
-    // localStorage lo manejaba `guardarDatos()`, con su propia reversión.
-    const contexto = appConDatos();
-    const restaurar = romper(contexto, 'setItem', 'cuota excedida');
+// ---------- RF-3 · Si el almacén no abre, la aplicación no abre ----------
 
-    try {
-        contexto.CuadernoVirtual.guardarRevirtiendoSiFalla([]);
-    } finally {
-        restaurar();
-    }
+test('navegador · si el navegador no tiene el almacén, la aplicación no abre', async () => {
+    // Un camino que no se recorre no está probado. Los caminos de fallo se
+    // provocan a propósito: sin esto, "avisa cuando el almacenamiento falla" sería
+    // una afirmación sin respaldo.
+    const carga = cargarComoNavegador({}, { sinAlmacen: true });
+    await carga.inicio;
 
-    assert.equal(contexto.localStorage.getItem('cuadernoVirtual'), MATERIAS_SEMBRADAS,
-        'lo que estaba guardado tiene que seguir guardado');
+    // No se dibuja el cuaderno: lo que se pinta es el texto de "no abre".
+    const panel = carga.contexto.document.getElementById('visor') && carga.contexto.document.getElementById('visor').hijos.length > 0
+        ? carga.contexto.document.getElementById('visor').hijos[0] : null;
+
+    assert.ok(panel, 'con el almacén ausente no se dibujó nada');
+    assert.equal(
+        panel.className, 'almacenamiento-no-abre',
+        'lo que se dibujó no es el panel de "no abre"'
+    );
 });
+
+test('navegador · si el almacén no abre, la aplicación no abre', async () => {
+    const carga = cargarComoNavegador({}, { almacen: 'no-abre' });
+    await carga.inicio;
+
+    const panel = carga.contexto.document.getElementById('visor') && carga.contexto.document.getElementById('visor').hijos.length > 0
+        ? carga.contexto.document.getElementById('visor').hijos[0] : null;
+
+    assert.ok(panel, 'con el almacén roto no se dibujó nada');
+    assert.equal(panel.className, 'almacenamiento-no-abre');
+});
+
+test('navegador · el texto de "no abre" no tiene ni un número', async () => {
+    // La misma regla que en el módulo: el plazo vive en el código. Un número
+    // escrito en un mensaje se desincroniza solo y el usuario no lo puede cambiar.
+    const carga = cargarComoNavegador({}, { sinAlmacen: true });
+    await carga.inicio;
+
+    const panel = carga.contexto.document.getElementById('visor').hijos[0];
+
+    assert.ok(!/\d/.test(panel.textContent || ''),
+        'el texto que ve el usuario tiene un número:\n' + panel.textContent);
+
+    assert.match(panel.textContent || '', /No se borr/i,
+        'el usuario tiene que leer que no perdió el cuaderno');
+});
+
+test('navegador · con el almacén ausente no se escribe nada', async () => {
+    // Lo que RF-3 prohíbe: mostrar el cuaderno viejo y dejar guardar. Acá no hay
+    // nada que guardar porque la app no abrió, y `guardarDatos()` lo dice.
+    const carga = cargarComoNavegador({}, { sinAlmacen: true });
+    await carga.inicio;
+
+    assert.equal(
+        await carga.contexto.CuadernoVirtual.guardarDatos(), false,
+        'con la aplicación sin abrir, guardar tiene que rechazarse'
+    );
+});
+
+test('navegador · el arranque se puede esperar y no tira', async () => {
+    // El hueco que T3 cerró. `cargarComoNavegador()` solo juntaba errores
+    // **síncronos** y su `console` no hacía nada: con el arranque asíncrono, un
+    // rechazo se perdía y ningún test lo veía. Con la promesa publicada, el arnés
+    // la espera y un fallo del arranque sale acá.
+    const carga = cargarComoNavegador({});
+    await assert.doesNotReject(carga.inicio, 'el arranque se rechazó');
+});
+
+test('navegador · el arranque publica su promesa en la API', async () => {
+    // Sin esto, el arnés no puede esperar y el hueco del punto anterior vuelve.
+    const { contexto } = cargarComoNavegador({});
+
+    assert.equal(
+        typeof contexto.CuadernoVirtual?.inicio?.then, 'function',
+        'app.js debe publicar `inicio` en window.CuadernoVirtual, o el arnés no '
+        + 'puede esperar al arranque y un fallo se pierde'
+    );
+});
+
+// ---------- Las protecciones de escritura se fueron a otro archivo ----------
+//
+// Los tests que estaban acá rompían `localStorage.setItem` para comprobar que
+// guardarDatos() no dejaba datos a medias. Con los datos en el almacén del
+// navegador, **apuntaban a un lugar donde la aplicación ya no escribe**: pasaban
+// en verde sin probar nada.
+//
+// Ahora están en `test/red-protecciones.test.js`, escritas contra `indexedDB`, y
+// cada una con su comprobación. Ese archivo tiene además un test que cuenta que
+// **sigan siendo cinco**: RNF-4 dice que la cuenta deja de ser el requisito, pero
+// que falte una no puede pasar.
+//
+// Lo que **no** se fueron, y siguen Importantes: los dos tests de arriba que
+// comprueban que los datos raros no tumban la aplicación, y los de que el
+// almacén que no abre no deja escribir.
 
 test('navegador · pintarMapa no lanza al dibujarse', () => {
     const { contexto, errores } = cargarComoNavegador({

@@ -405,6 +405,10 @@ const EXCEPCIONES = [
     {
         simbolo: 'existeFecha',
         motivo: 'Regla de fechas correcta, con 18 tests. Borrarla sería sacar algo que el calendario podría necesitar'
+    },
+    {
+        simbolo: 'contenidosEnMemoria',
+        motivo: 'Sonda para un requisito, decidida el 2026-10-05 (spec 008, T5): el contenido de los documentos NO se carga al arrancar, se pide al abrir. Sin una forma de contar lo que hay en memoria, ese requisito no se puede comprobar —y un requisito que no se puede medir no es un requisito. Si algún día la app lo consulta, sacar la excepción: la herramienta avisa'
     }
 ];
 

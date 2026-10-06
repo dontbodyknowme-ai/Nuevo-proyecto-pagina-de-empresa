@@ -30,6 +30,11 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
+// La siembra vive en `herramientas/sembrar.js` y la comparte con `capturar-arbol.js`.
+// Dos copias de una siembra se desincronizan, y la que queda vieja es la que nadie
+// recuerda actualizar.
+const { sembrar, comoRespaldo } = require('./sembrar.js');
+
 const RAIZ = path.join(__dirname, '..');
 const PUERTO = 9333;
 const CDP = `http://127.0.0.1:${PUERTO}`;
@@ -56,6 +61,25 @@ const ELEMENTOS = [
 ];
 
 const dormir = ms => new Promise(r => setTimeout(r, ms));
+
+// Los dos callbacks que `sembrar.js` necesita. Se arman acá porque esta herramienta se
+// adjunta a una sesión del CDP y `enviar` toma tres argumentos; `capturar-arbol.js` trabaja
+// sobre el target del primer plano y el suyo toma dos. El helper no tiene por qué saberlo.
+async function navegarYEsperar(cliente, sessionId, urlApp) {
+    await cliente.enviar('Page.navigate', { url: urlApp }, sessionId);
+    await dormir(1400);
+}
+
+async function evaluar(cliente, sessionId, expression, esPromesa) {
+    const r = await cliente.enviar('Runtime.evaluate', {
+        expression,
+        awaitPromise: !!esPromesa,
+        returnByValue: true
+    }, sessionId);
+    // OJO: `enviar` resuelve con `m.result`, y la respuesta de `Runtime.evaluate` tiene su
+    // resultado adentro de `result`.
+    return r && r.result ? r.result.value : undefined;
+}
 
 // ---------- Buscar Chrome ----------
 
@@ -376,17 +400,20 @@ const DATOS_CON_PROBLEMAS = JSON.stringify([
             // abierto el Pomodoro está oculto (regla de specs/002), así que
             // medir solo con el modal nunca detectaría un aviso que lo tape.
             for (const vista of ['calendario', 'mapa', 'principal']) {
-                // Empezar de cero en cada medición
-                await cliente.enviar('Page.navigate', { url: urlApp }, sessionId);
-                await dormir(1400);
-
-                // Sembrar los datos y recargar, para que la app arranque con
-                // ellos y no con lo que quedara de la medición anterior.
-                await cliente.enviar('Runtime.evaluate', {
-                    expression: `(localStorage.setItem('cuadernoVirtual', ${JSON.stringify(conjunto.datos)}), 1)`
-                }, sessionId);
-                await cliente.enviar('Page.navigate', { url: urlApp }, sessionId);
-                await dormir(1400);
+                // Sembrar los datos **por el camino de escritura de la aplicación** y
+                // recargar, para que arranque con ellos y no con lo que quedara de la
+                // medición anterior. Ver `herramientas/sembrar.js`.
+                //
+                // Antes esto ponía `localStorage.setItem(...)`. Con la aplicación leyendo
+                // del almacén del navegador, eso ya no sembraba nada: el primer escenario
+                // migraba y dejaba la marca, y el aviso de datos —que solo aparece con
+                // datos raros— **nunca aparecía**. Los doce escenarios "limpios" pasaban
+                // de mentira, y los doce "con problemas" fallaban.
+                await sembrar(
+                    () => navegarYEsperar(cliente, sessionId, urlApp),
+                    (expresion, esPromesa) => evaluar(cliente, sessionId, expresion, esPromesa),
+                    comoRespaldo(conjunto.datos)
+                );
 
                 // "principal" se queda con el modal cerrado.
                 if (vista !== 'principal') {
